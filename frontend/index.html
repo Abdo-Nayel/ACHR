@@ -125,7 +125,7 @@ a{color:var(--acc);text-decoration:none}
   border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
 
 /* ── auth ── */
-.auth{min-height:100vh;display:flex}
+.auth{min-height:100vh;min-height:100dvh;display:flex}
 .authL{flex:1;background:linear-gradient(150deg,var(--hero-a),var(--hero-b) 60%,var(--hero-c));
   color:#fff;padding:56px 52px;display:flex;flex-direction:column;justify-content:center;
   position:relative;overflow:hidden}
@@ -177,9 +177,9 @@ input:focus,select:focus{outline:0;border-color:var(--acc);box-shadow:0 0 0 3px 
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 
 /* ── shell ── */
-#app{display:flex;min-height:100vh}
+#app{display:flex;min-height:100vh;min-height:100dvh}
 aside{width:206px;background:var(--side);color:var(--side-fg);flex-shrink:0;display:flex;
-  flex-direction:column;position:sticky;top:0;height:100vh}
+  flex-direction:column;position:sticky;top:0;height:100vh;height:100dvh}
 .brand{padding:14px 16px;display:flex;align-items:center;gap:9px;color:var(--side-brand);
   font-weight:650;font-size:14.5px;border-bottom:1px solid var(--side-hi)}
 .brand .m{width:25px;height:25px;border-radius:var(--r-sm);background:var(--acc);color:var(--on-acc);
@@ -420,6 +420,32 @@ tbody tr:hover{background:var(--panel-2)}
 @media (max-width:900px){
   .g2c,.g3c,.row,.g2{grid-template-columns:1fr}
 
+  /* ── auth ──
+     The sign-in screen was the one view with no responsive rule at all. Two
+     side-by-side flex children on a 375px phone left the marketing panel
+     203px and the form card 85px — an unusable 85px-wide password field.
+
+     Stacked, and the form comes first: `order` rather than reordering the
+     markup, so the DOM keeps hero-then-form for a screen reader and for the
+     desktop layout, while a phone gets the thing it came here to do without
+     scrolling past five bullet points. */
+  .auth{flex-direction:column}
+  .authR{width:100%;order:-1;padding:28px 20px 32px;overflow:visible}
+  .card{max-width:440px}
+  .authL{padding:30px 20px 36px}
+  /* The bloom is sized for a half-screen panel; at phone width it washes out
+     the headline. */
+  .authL::after{display:none}
+  .authL h2{font-size:24px}
+  .authL p{font-size:14px;margin-bottom:22px;max-width:none}
+
+  /* iOS Safari zooms the whole page in whenever a focused field computes
+     under 16px, and never zooms back out — which is why every tap on this
+     form left the layout stranded mid-zoom. 16px is the threshold, not a
+     preference. */
+  input,select,textarea{font-size:16px}
+  .tabs button{font-size:14px;padding:9px 6px}
+
   /* Off-canvas drawer. `transform` rather than `display` so it animates and
      so the nav keeps its scroll position between openings. */
   aside{position:fixed;inset:0 auto 0 0;z-index:60;width:240px;
@@ -463,6 +489,15 @@ tbody tr:hover{background:var(--panel-2)}
 }
 
 @media (max-width:560px){
+  /* Below the fold on a phone and costing a lot of scroll to reach the hero's
+     headline; the proof points stay for tablets. */
+  .authL ul{display:none}
+  .authL{padding:24px 18px 30px}
+  .authL h2{font-size:21px}
+  .authR{padding:24px 16px 28px}
+  /* "Create organisation" wrapped mid-word in a 2-up tab at 320px. */
+  .tabs button{font-size:13px;padding:9px 4px}
+
   .kpis{grid-template-columns:1fr 1fr;gap:8px}
   .kpi b{font-size:18px}
   .big{font-size:22px}

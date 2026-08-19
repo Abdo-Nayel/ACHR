@@ -21,6 +21,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from decouple import Csv, config
+import structlog
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -587,7 +588,29 @@ LOGGING = {
     "formatters": {
         "json": {
             "()": "structlog.stdlib.ProcessorFormatter",
-            "processor": "structlog.processors.JSONRenderer",
+            # An *instance*, not the dotted path.
+            #
+            # `dictConfig` resolves the special `"()"` key as a callable and
+            # passes every other value through verbatim. So a string here
+            # reached `ProcessorFormatter` as a string, and structlog raised
+            # `TypeError: 'str' object is not callable` on the first record it
+            # tried to format.
+            #
+            # The failure was invisible in development, which uses the
+            # `console` formatter, and non-fatal in production: logging errors
+            # are swallowed by the logging module, so requests kept serving
+            # while every JSON log line silently failed to render. It was
+            # found by reading `journalctl` on the first deployment.
+            "processor": structlog.processors.JSONRenderer(),
+            # Records emitted by Django and third-party libraries never passed
+            # through structlog, so they arrive without the shared context.
+            # This chain gives them the same shape as our own, which is the
+            # point of shipping JSON logs at all — one parser for every line.
+            "foreign_pre_chain": [
+                structlog.stdlib.add_log_level,
+                structlog.stdlib.add_logger_name,
+                structlog.processors.TimeStamper(fmt="iso"),
+            ],
         },
         "console": {
             "format": "%(asctime)s %(levelname)-8s [%(request_id)s|%(tenant_id)s] "

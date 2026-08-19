@@ -1,0 +1,27 @@
+# ---------------------------------------------------------------------------
+# Optional extras. NOT required to run the API.
+#
+# These were in base.txt and should not have been: each one either pulls a
+# native toolchain or serves a feature that is not wired up yet, and on
+# Windows the first two fail during `pip install` with errors that look like
+# the project is broken when it is not.
+#
+#     pip install -r requirements/optional.txt
+# ---------------------------------------------------------------------------
+
+# PDF rendering for invoices and payslips.
+# WeasyPrint needs the GTK/Pango/Cairo native stack. On Windows that means
+# installing the GTK3 runtime separately — install this only when you are
+# actually implementing `GET /invoices/{id}/pdf` (currently a 501 stub).
+weasyprint>=62.3
+reportlab>=4.2
+
+# WebSockets for live stock levels and invoice status.
+# Pulls Daphne and a Twisted stack. The realtime channels are specified in
+# docs/06-api-contract.md but not implemented yet.
+channels[daphne]>=4.1,<5
+channels-redis>=4.2,<5
+
+# Celery queue dashboard. Useful in dev, must sit behind auth in production —
+# it exposes task arguments, which for a payroll task means salaries.
+flower>=2.0

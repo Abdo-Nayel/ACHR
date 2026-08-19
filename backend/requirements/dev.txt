@@ -1,0 +1,49 @@
+# ---------------------------------------------------------------------------
+# Developer + CI dependencies. Never installed in a production image.
+# ---------------------------------------------------------------------------
+-r base.txt
+
+# --- Testing ---------------------------------------------------------------
+pytest~=8.3.2
+pytest-django~=4.9.0
+pytest-cov~=5.0.0
+pytest-xdist~=3.6.1                 # parallel test runs; each worker gets its own DB
+pytest-randomly~=3.15.0             # random order surfaces inter-test state leaks,
+                                    # which in a tenant-scoped system means a test
+                                    # passing only because a previous test left a
+                                    # tenant bound in a ContextVar
+pytest-mock~=3.14.0
+pytest-socket~=0.7.0                # fails any test that opens a real network socket
+factory-boy~=3.3.1
+faker~=28.1.0
+freezegun~=1.5.1                    # period boundaries, accruals, aging buckets
+responses~=0.25.3
+respx~=0.21.1                       # httpx mocking for gateway clients
+
+# hypothesis: property-based tests for the money layer. The golden vectors it
+# generates are shared with the frontend's fast-check suite, so both sides of
+# the wire round-trip the same decimals.
+hypothesis[django]~=6.111.0
+
+# --- Lint / format / types -------------------------------------------------
+ruff~=0.6.4                         # lint + format; replaces flake8/isort/black
+mypy~=1.11.2
+django-stubs[compatible-mypy]~=5.0.4
+djangorestframework-stubs~=3.15.1
+types-python-dateutil~=2.9.0
+types-requests~=2.32.0
+celery-types~=0.22.0
+
+# --- Security / quality ----------------------------------------------------
+bandit~=1.7.9
+pip-audit~=2.7.3
+django-upgrade~=1.20.0
+coverage[toml]~=7.6.1
+
+# --- Developer experience --------------------------------------------------
+django-extensions~=3.2.3            # shell_plus, graph_models, runserver_plus
+django-debug-toolbar~=4.4.6
+ipython~=8.27.0
+watchfiles~=0.24.0
+pip-tools~=7.4.1                    # compiles the lockfiles
+model-bakery~=1.19.5

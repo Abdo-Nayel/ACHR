@@ -1,0 +1,2563 @@
+{
+  "version": "1.0.0",
+  "permissions": [
+    {
+      "codename": "accounting.account.create",
+      "domain": "accounting",
+      "resource": "account",
+      "action": "create",
+      "description": "Create an account in the chart of accounts.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "accounting.account.read",
+      "domain": "accounting",
+      "resource": "account",
+      "action": "read",
+      "description": "View the chart of accounts and account balances.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "accounting.account.update",
+      "domain": "accounting",
+      "resource": "account",
+      "action": "update",
+      "description": "Rename or re-parent an account.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "accounting.account.archive",
+      "domain": "accounting",
+      "resource": "account",
+      "action": "archive",
+      "description": "Deactivate an account so it can no longer be posted to.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "accounting.journal_entry.create",
+      "domain": "accounting",
+      "resource": "journal_entry",
+      "action": "create",
+      "description": "Create a draft journal entry.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "accounting.journal_entry.read",
+      "domain": "accounting",
+      "resource": "journal_entry",
+      "action": "read",
+      "description": "View journal entries and their lines.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "accounting.journal_entry.update",
+      "domain": "accounting",
+      "resource": "journal_entry",
+      "action": "update",
+      "description": "Edit a draft journal entry before posting.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "accounting.journal_entry.post",
+      "domain": "accounting",
+      "resource": "journal_entry",
+      "action": "post",
+      "description": "Post a balanced draft entry to the ledger.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "accounting.journal_entry.void",
+      "domain": "accounting",
+      "resource": "journal_entry",
+      "action": "void",
+      "description": "Void a posted entry within an open period.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "accounting.journal_entry.reverse",
+      "domain": "accounting",
+      "resource": "journal_entry",
+      "action": "reverse",
+      "description": "Create a reversing mirror entry in the current open period.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "accounting.fiscal_period.create",
+      "domain": "accounting",
+      "resource": "fiscal_period",
+      "action": "create",
+      "description": "Generate the periods of a fiscal year.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "accounting.fiscal_period.read",
+      "domain": "accounting",
+      "resource": "fiscal_period",
+      "action": "read",
+      "description": "View the fiscal calendar and period statuses.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "accounting.fiscal_period.close",
+      "domain": "accounting",
+      "resource": "fiscal_period",
+      "action": "close",
+      "description": "Soft-close or close a period, locking postings.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "accounting.fiscal_period.reopen",
+      "domain": "accounting",
+      "resource": "fiscal_period",
+      "action": "reopen",
+      "description": "Reopen a closed period. Break-glass; always audit-logged.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "accounting.period.post_to_soft_closed",
+      "domain": "accounting",
+      "resource": "period",
+      "action": "post_to_soft_closed",
+      "description": "Post into a SOFT_CLOSED period during month-end adjustments. Codename referenced verbatim in apps/accounting/models.py::FiscalPeriod.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "accounting.tax_rate.read",
+      "domain": "accounting",
+      "resource": "tax_rate",
+      "action": "read",
+      "description": "View VAT / sales-tax definitions.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "accounting.tax_rate.manage",
+      "domain": "accounting",
+      "resource": "tax_rate",
+      "action": "manage",
+      "description": "Create, amend or expire a tax rate.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "accounting.journal.read",
+      "domain": "accounting",
+      "resource": "journal",
+      "action": "read",
+      "description": "View the books of original entry.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "accounting.journal.manage",
+      "domain": "accounting",
+      "resource": "journal",
+      "action": "manage",
+      "description": "Create or configure a journal and its sequence prefix.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "accounting.exchange_rate.read",
+      "domain": "accounting",
+      "resource": "exchange_rate",
+      "action": "read",
+      "description": "View the FX rate table.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "accounting.exchange_rate.manage",
+      "domain": "accounting",
+      "resource": "exchange_rate",
+      "action": "manage",
+      "description": "Enter or correct an FX rate.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "sales.customer.create",
+      "domain": "sales",
+      "resource": "customer",
+      "action": "create",
+      "description": "Create a customer record.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "sales.customer.read",
+      "domain": "sales",
+      "resource": "customer",
+      "action": "read",
+      "description": "View customers and their balances.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "sales.customer.update",
+      "domain": "sales",
+      "resource": "customer",
+      "action": "update",
+      "description": "Edit customer details, terms and credit limit.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "sales.customer.archive",
+      "domain": "sales",
+      "resource": "customer",
+      "action": "archive",
+      "description": "Archive a customer so it stops appearing in pickers.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "sales.invoice.create",
+      "domain": "sales",
+      "resource": "invoice",
+      "action": "create",
+      "description": "Create a draft invoice.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "sales.invoice.read",
+      "domain": "sales",
+      "resource": "invoice",
+      "action": "read",
+      "description": "View invoices and their lines.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "sales.invoice.update",
+      "domain": "sales",
+      "resource": "invoice",
+      "action": "update",
+      "description": "Edit a draft invoice.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "sales.invoice.issue",
+      "domain": "sales",
+      "resource": "invoice",
+      "action": "issue",
+      "description": "Issue an invoice: allocate its number and post it to the ledger.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "sales.invoice.send",
+      "domain": "sales",
+      "resource": "invoice",
+      "action": "send",
+      "description": "Email or e-invoice an issued invoice to the customer.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "sales.invoice.void",
+      "domain": "sales",
+      "resource": "invoice",
+      "action": "void",
+      "description": "Void an issued invoice and reverse its posting.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "sales.invoice.write_off",
+      "domain": "sales",
+      "resource": "invoice",
+      "action": "write_off",
+      "description": "Write an uncollectable balance off to bad debt.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "sales.credit_note.create",
+      "domain": "sales",
+      "resource": "credit_note",
+      "action": "create",
+      "description": "Create a draft credit note against an invoice.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "sales.credit_note.read",
+      "domain": "sales",
+      "resource": "credit_note",
+      "action": "read",
+      "description": "View credit notes.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "sales.credit_note.issue",
+      "domain": "sales",
+      "resource": "credit_note",
+      "action": "issue",
+      "description": "Issue a credit note and post it.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "sales.credit_note.apply",
+      "domain": "sales",
+      "resource": "credit_note",
+      "action": "apply",
+      "description": "Apply an issued credit note to an outstanding invoice.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "sales.recurring_profile.read",
+      "domain": "sales",
+      "resource": "recurring_profile",
+      "action": "read",
+      "description": "View recurring invoice profiles.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "sales.recurring_profile.manage",
+      "domain": "sales",
+      "resource": "recurring_profile",
+      "action": "manage",
+      "description": "Create, edit, pause or resume a recurring profile.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "sales.recurring_profile.run_now",
+      "domain": "sales",
+      "resource": "recurring_profile",
+      "action": "run_now",
+      "description": "Generate the next invoice from a profile immediately.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "banking.payment.create",
+      "domain": "banking",
+      "resource": "payment",
+      "action": "create",
+      "description": "Record a customer receipt or a vendor payment.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "banking.payment.read",
+      "domain": "banking",
+      "resource": "payment",
+      "action": "read",
+      "description": "View payments and their allocations.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "banking.payment.void",
+      "domain": "banking",
+      "resource": "payment",
+      "action": "void",
+      "description": "Void a recorded payment and reverse its posting.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "banking.payment.allocate",
+      "domain": "banking",
+      "resource": "payment",
+      "action": "allocate",
+      "description": "Allocate or re-allocate a payment across documents.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "banking.refund.create",
+      "domain": "banking",
+      "resource": "refund",
+      "action": "create",
+      "description": "Issue a refund back to the original payment method.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "banking.refund.read",
+      "domain": "banking",
+      "resource": "refund",
+      "action": "read",
+      "description": "View refunds.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "banking.refund.approve",
+      "domain": "banking",
+      "resource": "refund",
+      "action": "approve",
+      "description": "Approve a refund above the role's approval limit.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "banking.gateway_config.read",
+      "domain": "banking",
+      "resource": "gateway_config",
+      "action": "read",
+      "description": "View payment gateway configuration (never the secret).",
+      "is_sensitive": false
+    },
+    {
+      "codename": "banking.gateway_config.manage",
+      "domain": "banking",
+      "resource": "gateway_config",
+      "action": "manage",
+      "description": "Connect or disconnect a payment gateway.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "banking.gateway_config.rotate_secret",
+      "domain": "banking",
+      "resource": "gateway_config",
+      "action": "rotate_secret",
+      "description": "Rotate a gateway API key or webhook signing secret.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "banking.webhook_event.read",
+      "domain": "banking",
+      "resource": "webhook_event",
+      "action": "read",
+      "description": "Inspect received gateway webhook events and their status.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "banking.webhook_event.replay",
+      "domain": "banking",
+      "resource": "webhook_event",
+      "action": "replay",
+      "description": "Replay a failed webhook event through the handler.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "banking.bank_account.create",
+      "domain": "banking",
+      "resource": "bank_account",
+      "action": "create",
+      "description": "Add a bank or cash account.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "banking.bank_account.read",
+      "domain": "banking",
+      "resource": "bank_account",
+      "action": "read",
+      "description": "View bank accounts and balances.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "banking.bank_account.update",
+      "domain": "banking",
+      "resource": "bank_account",
+      "action": "update",
+      "description": "Edit bank account details.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "banking.bank_account.archive",
+      "domain": "banking",
+      "resource": "bank_account",
+      "action": "archive",
+      "description": "Archive a closed bank account.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "banking.statement.import",
+      "domain": "banking",
+      "resource": "statement",
+      "action": "import",
+      "description": "Import a bank statement file or sync a feed.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "banking.statement.read",
+      "domain": "banking",
+      "resource": "statement",
+      "action": "read",
+      "description": "View imported bank statements and their lines.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "banking.reconciliation.create",
+      "domain": "banking",
+      "resource": "reconciliation",
+      "action": "create",
+      "description": "Open a reconciliation session for a period.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "banking.reconciliation.read",
+      "domain": "banking",
+      "resource": "reconciliation",
+      "action": "read",
+      "description": "View reconciliation sessions and matches.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "banking.reconciliation.match",
+      "domain": "banking",
+      "resource": "reconciliation",
+      "action": "match",
+      "description": "Match or unmatch a statement line to a ledger line.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "banking.reconciliation.complete",
+      "domain": "banking",
+      "resource": "reconciliation",
+      "action": "complete",
+      "description": "Finalise a reconciliation and lock its matches.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "purchasing.expense.create",
+      "domain": "purchasing",
+      "resource": "expense",
+      "action": "create",
+      "description": "Record an expense claim.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "purchasing.expense.read",
+      "domain": "purchasing",
+      "resource": "expense",
+      "action": "read",
+      "description": "View expense claims.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "purchasing.expense.update",
+      "domain": "purchasing",
+      "resource": "expense",
+      "action": "update",
+      "description": "Edit an expense claim that is still a draft.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "purchasing.expense.submit",
+      "domain": "purchasing",
+      "resource": "expense",
+      "action": "submit",
+      "description": "Submit an expense claim for approval.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "purchasing.expense.approve",
+      "domain": "purchasing",
+      "resource": "expense",
+      "action": "approve",
+      "description": "Approve a submitted expense claim.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "purchasing.expense.reject",
+      "domain": "purchasing",
+      "resource": "expense",
+      "action": "reject",
+      "description": "Reject a submitted expense claim with a reason.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "purchasing.expense.reimburse",
+      "domain": "purchasing",
+      "resource": "expense",
+      "action": "reimburse",
+      "description": "Reimburse an approved claim and post the payment.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "purchasing.bill.create",
+      "domain": "purchasing",
+      "resource": "bill",
+      "action": "create",
+      "description": "Enter a vendor bill.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "purchasing.bill.read",
+      "domain": "purchasing",
+      "resource": "bill",
+      "action": "read",
+      "description": "View vendor bills.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "purchasing.bill.update",
+      "domain": "purchasing",
+      "resource": "bill",
+      "action": "update",
+      "description": "Edit a bill before it is posted.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "purchasing.bill.approve",
+      "domain": "purchasing",
+      "resource": "bill",
+      "action": "approve",
+      "description": "Approve a bill for payment.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "purchasing.bill.post",
+      "domain": "purchasing",
+      "resource": "bill",
+      "action": "post",
+      "description": "Post an approved bill to accounts payable.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "purchasing.bill.pay",
+      "domain": "purchasing",
+      "resource": "bill",
+      "action": "pay",
+      "description": "Record payment of an approved bill against a bank account.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "purchasing.bill.void",
+      "domain": "purchasing",
+      "resource": "bill",
+      "action": "void",
+      "description": "Void a posted bill and reverse it.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "purchasing.vendor.create",
+      "domain": "purchasing",
+      "resource": "vendor",
+      "action": "create",
+      "description": "Create a vendor record.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "purchasing.vendor.read",
+      "domain": "purchasing",
+      "resource": "vendor",
+      "action": "read",
+      "description": "View vendors and their balances.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "purchasing.vendor.update",
+      "domain": "purchasing",
+      "resource": "vendor",
+      "action": "update",
+      "description": "Edit vendor details and bank instructions.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "purchasing.vendor.archive",
+      "domain": "purchasing",
+      "resource": "vendor",
+      "action": "archive",
+      "description": "Archive a vendor.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "purchasing.category.read",
+      "domain": "purchasing",
+      "resource": "category",
+      "action": "read",
+      "description": "View expense categories and their default accounts.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "purchasing.category.manage",
+      "domain": "purchasing",
+      "resource": "category",
+      "action": "manage",
+      "description": "Create or edit an expense category.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "inventory.item.create",
+      "domain": "inventory",
+      "resource": "item",
+      "action": "create",
+      "description": "Create a stock or service item.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "inventory.item.read",
+      "domain": "inventory",
+      "resource": "item",
+      "action": "read",
+      "description": "View items, SKUs and stock on hand.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "inventory.item.update",
+      "domain": "inventory",
+      "resource": "item",
+      "action": "update",
+      "description": "Edit item details.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "inventory.item.archive",
+      "domain": "inventory",
+      "resource": "item",
+      "action": "archive",
+      "description": "Archive an item.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "inventory.item.update_cost",
+      "domain": "inventory",
+      "resource": "item",
+      "action": "update_cost",
+      "description": "Override an item's standard or average cost.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "inventory.warehouse.read",
+      "domain": "inventory",
+      "resource": "warehouse",
+      "action": "read",
+      "description": "View warehouses and locations.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "inventory.warehouse.manage",
+      "domain": "inventory",
+      "resource": "warehouse",
+      "action": "manage",
+      "description": "Create or edit a warehouse.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "inventory.stock_movement.create",
+      "domain": "inventory",
+      "resource": "stock_movement",
+      "action": "create",
+      "description": "Record a receipt, issue or transfer.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "inventory.stock_movement.read",
+      "domain": "inventory",
+      "resource": "stock_movement",
+      "action": "read",
+      "description": "View stock movement history.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "inventory.stock_movement.post",
+      "domain": "inventory",
+      "resource": "stock_movement",
+      "action": "post",
+      "description": "Post a stock movement and its inventory journal entry.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "inventory.adjustment.create",
+      "domain": "inventory",
+      "resource": "adjustment",
+      "action": "create",
+      "description": "Raise a stock adjustment (count variance, write-off).",
+      "is_sensitive": false
+    },
+    {
+      "codename": "inventory.adjustment.read",
+      "domain": "inventory",
+      "resource": "adjustment",
+      "action": "read",
+      "description": "View stock adjustments.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "inventory.adjustment.approve",
+      "domain": "inventory",
+      "resource": "adjustment",
+      "action": "approve",
+      "description": "Approve and post a stock adjustment.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "inventory.price_list.read",
+      "domain": "inventory",
+      "resource": "price_list",
+      "action": "read",
+      "description": "View price lists.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "inventory.price_list.manage",
+      "domain": "inventory",
+      "resource": "price_list",
+      "action": "manage",
+      "description": "Create or edit a price list and its entries.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "projects.project.create",
+      "domain": "projects",
+      "resource": "project",
+      "action": "create",
+      "description": "Create a project.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "projects.project.read",
+      "domain": "projects",
+      "resource": "project",
+      "action": "read",
+      "description": "View projects, budgets and profitability.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "projects.project.update",
+      "domain": "projects",
+      "resource": "project",
+      "action": "update",
+      "description": "Edit project details and budget.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "projects.project.archive",
+      "domain": "projects",
+      "resource": "project",
+      "action": "archive",
+      "description": "Archive a project.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "projects.project.close",
+      "domain": "projects",
+      "resource": "project",
+      "action": "close",
+      "description": "Close a project to further time and cost.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "projects.task.create",
+      "domain": "projects",
+      "resource": "task",
+      "action": "create",
+      "description": "Create a task on a project.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "projects.task.read",
+      "domain": "projects",
+      "resource": "task",
+      "action": "read",
+      "description": "View tasks.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "projects.task.update",
+      "domain": "projects",
+      "resource": "task",
+      "action": "update",
+      "description": "Edit a task.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "projects.task.assign",
+      "domain": "projects",
+      "resource": "task",
+      "action": "assign",
+      "description": "Assign a task to a team member.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "projects.timesheet_entry.create",
+      "domain": "projects",
+      "resource": "timesheet_entry",
+      "action": "create",
+      "description": "Log time against a project or task.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "projects.timesheet_entry.read",
+      "domain": "projects",
+      "resource": "timesheet_entry",
+      "action": "read",
+      "description": "View timesheet entries.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "projects.timesheet_entry.update",
+      "domain": "projects",
+      "resource": "timesheet_entry",
+      "action": "update",
+      "description": "Edit an unsubmitted timesheet entry.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "projects.timesheet_entry.submit",
+      "domain": "projects",
+      "resource": "timesheet_entry",
+      "action": "submit",
+      "description": "Submit a timesheet for approval.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "projects.timesheet_entry.approve",
+      "domain": "projects",
+      "resource": "timesheet_entry",
+      "action": "approve",
+      "description": "Approve a submitted timesheet, making it billable.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "hr.employee.create",
+      "domain": "hr",
+      "resource": "employee",
+      "action": "create",
+      "description": "Create an employee record.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "hr.employee.read",
+      "domain": "hr",
+      "resource": "employee",
+      "action": "read",
+      "description": "View employee records excluding compensation.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "hr.employee.update",
+      "domain": "hr",
+      "resource": "employee",
+      "action": "update",
+      "description": "Edit employee personal and job details.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "hr.employee.terminate",
+      "domain": "hr",
+      "resource": "employee",
+      "action": "terminate",
+      "description": "Terminate an employee and trigger final settlement.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "hr.employee.read_compensation",
+      "domain": "hr",
+      "resource": "employee",
+      "action": "read_compensation",
+      "description": "View salary, bank details and compensation history.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "hr.employee.export",
+      "domain": "hr",
+      "resource": "employee",
+      "action": "export",
+      "description": "Export employee records containing personal data.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "hr.department.create",
+      "domain": "hr",
+      "resource": "department",
+      "action": "create",
+      "description": "Create a department in the org chart.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "hr.department.read",
+      "domain": "hr",
+      "resource": "department",
+      "action": "read",
+      "description": "View the org chart.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "hr.department.update",
+      "domain": "hr",
+      "resource": "department",
+      "action": "update",
+      "description": "Rename or re-parent a department.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "hr.department.archive",
+      "domain": "hr",
+      "resource": "department",
+      "action": "archive",
+      "description": "Archive a department with no active employees.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "hr.document.read",
+      "domain": "hr",
+      "resource": "document",
+      "action": "read",
+      "description": "View employee documents (contracts, certificates, IDs).",
+      "is_sensitive": false
+    },
+    {
+      "codename": "hr.document.manage",
+      "domain": "hr",
+      "resource": "document",
+      "action": "manage",
+      "description": "Upload, replace or delete an employee document.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "hr.attendance.create",
+      "domain": "hr",
+      "resource": "attendance",
+      "action": "create",
+      "description": "Record a clock-in / clock-out or a manual attendance row.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "hr.attendance.read",
+      "domain": "hr",
+      "resource": "attendance",
+      "action": "read",
+      "description": "View attendance records.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "hr.attendance.update",
+      "domain": "hr",
+      "resource": "attendance",
+      "action": "update",
+      "description": "Correct an attendance record.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "hr.attendance.approve",
+      "domain": "hr",
+      "resource": "attendance",
+      "action": "approve",
+      "description": "Approve corrected or overtime attendance.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "hr.leave_request.create",
+      "domain": "hr",
+      "resource": "leave_request",
+      "action": "create",
+      "description": "Request leave.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "hr.leave_request.read",
+      "domain": "hr",
+      "resource": "leave_request",
+      "action": "read",
+      "description": "View leave requests.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "hr.leave_request.update",
+      "domain": "hr",
+      "resource": "leave_request",
+      "action": "update",
+      "description": "Edit a pending leave request.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "hr.leave_request.cancel",
+      "domain": "hr",
+      "resource": "leave_request",
+      "action": "cancel",
+      "description": "Cancel a leave request and restore the balance.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "hr.leave_request.approve",
+      "domain": "hr",
+      "resource": "leave_request",
+      "action": "approve",
+      "description": "Approve a leave request and consume the balance.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "hr.leave_request.reject",
+      "domain": "hr",
+      "resource": "leave_request",
+      "action": "reject",
+      "description": "Reject a leave request with a reason.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "hr.leave_type.read",
+      "domain": "hr",
+      "resource": "leave_type",
+      "action": "read",
+      "description": "View leave types and their accrual policy.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "hr.leave_type.manage",
+      "domain": "hr",
+      "resource": "leave_type",
+      "action": "manage",
+      "description": "Create or edit a leave type and its accrual rules.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "hr.leave_balance.read",
+      "domain": "hr",
+      "resource": "leave_balance",
+      "action": "read",
+      "description": "View leave balances.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "hr.leave_balance.adjust",
+      "domain": "hr",
+      "resource": "leave_balance",
+      "action": "adjust",
+      "description": "Manually adjust a leave balance.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "payroll.component.read",
+      "domain": "payroll",
+      "resource": "component",
+      "action": "read",
+      "description": "View salary components (earnings, deductions, benefits).",
+      "is_sensitive": false
+    },
+    {
+      "codename": "payroll.component.manage",
+      "domain": "payroll",
+      "resource": "component",
+      "action": "manage",
+      "description": "Create or edit a salary component and its formula.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "payroll.payroll_run.create",
+      "domain": "payroll",
+      "resource": "payroll_run",
+      "action": "create",
+      "description": "Open a payroll run for a pay period.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "payroll.payroll_run.read",
+      "domain": "payroll",
+      "resource": "payroll_run",
+      "action": "read",
+      "description": "View payroll runs and their totals.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "payroll.payroll_run.calculate",
+      "domain": "payroll",
+      "resource": "payroll_run",
+      "action": "calculate",
+      "description": "Calculate gross-to-net for every employee in the run.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "payroll.payroll_run.approve",
+      "domain": "payroll",
+      "resource": "payroll_run",
+      "action": "approve",
+      "description": "Approve a calculated payroll run, releasing it for payment.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "payroll.payroll_run.post",
+      "domain": "payroll",
+      "resource": "payroll_run",
+      "action": "post",
+      "description": "Post an approved payroll run to the ledger.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "payroll.payroll_run.pay",
+      "domain": "payroll",
+      "resource": "payroll_run",
+      "action": "pay",
+      "description": "Generate the payment file / disburse an approved run.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "payroll.payroll_run.void",
+      "domain": "payroll",
+      "resource": "payroll_run",
+      "action": "void",
+      "description": "Void a payroll run and reverse its posting.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "payroll.payslip.read",
+      "domain": "payroll",
+      "resource": "payslip",
+      "action": "read",
+      "description": "View payslips.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "payroll.payslip.publish",
+      "domain": "payroll",
+      "resource": "payslip",
+      "action": "publish",
+      "description": "Publish payslips to the employee self-service portal.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "payroll.payslip.export",
+      "domain": "payroll",
+      "resource": "payslip",
+      "action": "export",
+      "description": "Export payslips or a bank transfer file.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "payroll.tax_bracket.read",
+      "domain": "payroll",
+      "resource": "tax_bracket",
+      "action": "read",
+      "description": "View income-tax brackets and social-insurance ceilings.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "payroll.tax_bracket.manage",
+      "domain": "payroll",
+      "resource": "tax_bracket",
+      "action": "manage",
+      "description": "Edit income-tax brackets and statutory ceilings.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "reporting.profit_loss.read",
+      "domain": "reporting",
+      "resource": "profit_loss",
+      "action": "read",
+      "description": "Run the profit & loss statement.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "reporting.balance_sheet.read",
+      "domain": "reporting",
+      "resource": "balance_sheet",
+      "action": "read",
+      "description": "Run the balance sheet.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "reporting.trial_balance.read",
+      "domain": "reporting",
+      "resource": "trial_balance",
+      "action": "read",
+      "description": "Run the trial balance.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "reporting.cash_flow.read",
+      "domain": "reporting",
+      "resource": "cash_flow",
+      "action": "read",
+      "description": "Run the cash flow statement.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "reporting.tax_summary.read",
+      "domain": "reporting",
+      "resource": "tax_summary",
+      "action": "read",
+      "description": "Run the VAT / tax summary for a filing period.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "reporting.aging.read",
+      "domain": "reporting",
+      "resource": "aging",
+      "action": "read",
+      "description": "Run AR and AP ageing reports.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "reporting.payroll_register.read",
+      "domain": "reporting",
+      "resource": "payroll_register",
+      "action": "read",
+      "description": "Run the payroll register for a pay period.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "reporting.report.export",
+      "domain": "reporting",
+      "resource": "report",
+      "action": "export",
+      "description": "Export any permitted report to CSV / XLSX / PDF.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "settings.organisation.read",
+      "domain": "settings",
+      "resource": "organisation",
+      "action": "read",
+      "description": "View organisation profile, fiscal year and base currency.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "settings.organisation.update",
+      "domain": "settings",
+      "resource": "organisation",
+      "action": "update",
+      "description": "Edit organisation profile and tax registration.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "settings.branding.read",
+      "domain": "settings",
+      "resource": "branding",
+      "action": "read",
+      "description": "View document templates and branding.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "settings.branding.manage",
+      "domain": "settings",
+      "resource": "branding",
+      "action": "manage",
+      "description": "Edit document templates, logo and email footers.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "settings.sequence.read",
+      "domain": "settings",
+      "resource": "sequence",
+      "action": "read",
+      "description": "View document numbering sequences.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "settings.sequence.manage",
+      "domain": "settings",
+      "resource": "sequence",
+      "action": "manage",
+      "description": "Change a document numbering sequence.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "settings.integration.read",
+      "domain": "settings",
+      "resource": "integration",
+      "action": "read",
+      "description": "View connected third-party integrations.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "settings.integration.manage",
+      "domain": "settings",
+      "resource": "integration",
+      "action": "manage",
+      "description": "Connect, configure or disconnect an integration.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "settings.notification.read",
+      "domain": "settings",
+      "resource": "notification",
+      "action": "read",
+      "description": "View notification and reminder rules.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "settings.notification.manage",
+      "domain": "settings",
+      "resource": "notification",
+      "action": "manage",
+      "description": "Edit notification and reminder rules.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "settings.audit_log.read",
+      "domain": "settings",
+      "resource": "audit_log",
+      "action": "read",
+      "description": "Read the tenant audit log.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "settings.audit_log.export",
+      "domain": "settings",
+      "resource": "audit_log",
+      "action": "export",
+      "description": "Export the tenant audit log.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "settings.export.create",
+      "domain": "settings",
+      "resource": "export",
+      "action": "create",
+      "description": "Request a full-tenant data export.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "iam.user.invite",
+      "domain": "iam",
+      "resource": "user",
+      "action": "invite",
+      "description": "Invite a user to the tenant.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "iam.user.read",
+      "domain": "iam",
+      "resource": "user",
+      "action": "read",
+      "description": "View users and their membership status.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "iam.user.update",
+      "domain": "iam",
+      "resource": "user",
+      "action": "update",
+      "description": "Edit a user's profile within this tenant.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "iam.user.deactivate",
+      "domain": "iam",
+      "resource": "user",
+      "action": "deactivate",
+      "description": "Deactivate a membership, revoking access immediately.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "iam.user.reset_password",
+      "domain": "iam",
+      "resource": "user",
+      "action": "reset_password",
+      "description": "Force a password reset / MFA re-enrolment.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "iam.user.impersonate",
+      "domain": "iam",
+      "resource": "user",
+      "action": "impersonate",
+      "description": "Impersonate a user for support. Always audit-logged.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "iam.role.create",
+      "domain": "iam",
+      "resource": "role",
+      "action": "create",
+      "description": "Clone a system role into a custom tenant role.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "iam.role.read",
+      "domain": "iam",
+      "resource": "role",
+      "action": "read",
+      "description": "View roles and the permissions they bundle.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "iam.role.update",
+      "domain": "iam",
+      "resource": "role",
+      "action": "update",
+      "description": "Edit a custom role's permissions or scope rules.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "iam.role.delete",
+      "domain": "iam",
+      "resource": "role",
+      "action": "delete",
+      "description": "Delete an unassigned custom role.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "iam.membership.read",
+      "domain": "iam",
+      "resource": "membership",
+      "action": "read",
+      "description": "View memberships and their role assignments.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "iam.membership.assign_role",
+      "domain": "iam",
+      "resource": "membership",
+      "action": "assign_role",
+      "description": "Assign a role to a membership.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "iam.membership.revoke_role",
+      "domain": "iam",
+      "resource": "membership",
+      "action": "revoke_role",
+      "description": "Revoke a role assignment.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "iam.membership.transfer_ownership",
+      "domain": "iam",
+      "resource": "membership",
+      "action": "transfer_ownership",
+      "description": "Transfer tenant ownership to another membership.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "iam.api_key.create",
+      "domain": "iam",
+      "resource": "api_key",
+      "action": "create",
+      "description": "Create a machine API key. Plaintext shown once.",
+      "is_sensitive": true
+    },
+    {
+      "codename": "iam.api_key.read",
+      "domain": "iam",
+      "resource": "api_key",
+      "action": "read",
+      "description": "List API keys by prefix and last-used timestamp.",
+      "is_sensitive": false
+    },
+    {
+      "codename": "iam.api_key.revoke",
+      "domain": "iam",
+      "resource": "api_key",
+      "action": "revoke",
+      "description": "Revoke an API key immediately.",
+      "is_sensitive": true
+    }
+  ],
+  "roles": [
+    {
+      "code": "owner",
+      "name": "Owner",
+      "rank": 0,
+      "is_system": true,
+      "description": "The billing and legal owner of the tenant; holds every permission in the catalogue including the ones that can destroy the tenant itself. Exists so that there is always exactly one accountable human who can re-grant access after everyone else has locked themselves out.",
+      "permissions": [
+        "accounting.account.archive",
+        "accounting.account.create",
+        "accounting.account.read",
+        "accounting.account.update",
+        "accounting.exchange_rate.manage",
+        "accounting.exchange_rate.read",
+        "accounting.fiscal_period.close",
+        "accounting.fiscal_period.create",
+        "accounting.fiscal_period.read",
+        "accounting.fiscal_period.reopen",
+        "accounting.journal.manage",
+        "accounting.journal.read",
+        "accounting.journal_entry.create",
+        "accounting.journal_entry.post",
+        "accounting.journal_entry.read",
+        "accounting.journal_entry.reverse",
+        "accounting.journal_entry.update",
+        "accounting.journal_entry.void",
+        "accounting.period.post_to_soft_closed",
+        "accounting.tax_rate.manage",
+        "accounting.tax_rate.read",
+        "banking.bank_account.archive",
+        "banking.bank_account.create",
+        "banking.bank_account.read",
+        "banking.bank_account.update",
+        "banking.gateway_config.manage",
+        "banking.gateway_config.read",
+        "banking.gateway_config.rotate_secret",
+        "banking.payment.allocate",
+        "banking.payment.create",
+        "banking.payment.read",
+        "banking.payment.void",
+        "banking.reconciliation.complete",
+        "banking.reconciliation.create",
+        "banking.reconciliation.match",
+        "banking.reconciliation.read",
+        "banking.refund.approve",
+        "banking.refund.create",
+        "banking.refund.read",
+        "banking.statement.import",
+        "banking.statement.read",
+        "banking.webhook_event.read",
+        "banking.webhook_event.replay",
+        "hr.attendance.approve",
+        "hr.attendance.create",
+        "hr.attendance.read",
+        "hr.attendance.update",
+        "hr.department.archive",
+        "hr.department.create",
+        "hr.department.read",
+        "hr.department.update",
+        "hr.document.manage",
+        "hr.document.read",
+        "hr.employee.create",
+        "hr.employee.export",
+        "hr.employee.read",
+        "hr.employee.read_compensation",
+        "hr.employee.terminate",
+        "hr.employee.update",
+        "hr.leave_balance.adjust",
+        "hr.leave_balance.read",
+        "hr.leave_request.approve",
+        "hr.leave_request.cancel",
+        "hr.leave_request.create",
+        "hr.leave_request.read",
+        "hr.leave_request.reject",
+        "hr.leave_request.update",
+        "hr.leave_type.manage",
+        "hr.leave_type.read",
+        "iam.api_key.create",
+        "iam.api_key.read",
+        "iam.api_key.revoke",
+        "iam.membership.assign_role",
+        "iam.membership.read",
+        "iam.membership.revoke_role",
+        "iam.membership.transfer_ownership",
+        "iam.role.create",
+        "iam.role.delete",
+        "iam.role.read",
+        "iam.role.update",
+        "iam.user.deactivate",
+        "iam.user.impersonate",
+        "iam.user.invite",
+        "iam.user.read",
+        "iam.user.reset_password",
+        "iam.user.update",
+        "inventory.adjustment.approve",
+        "inventory.adjustment.create",
+        "inventory.adjustment.read",
+        "inventory.item.archive",
+        "inventory.item.create",
+        "inventory.item.read",
+        "inventory.item.update",
+        "inventory.item.update_cost",
+        "inventory.price_list.manage",
+        "inventory.price_list.read",
+        "inventory.stock_movement.create",
+        "inventory.stock_movement.post",
+        "inventory.stock_movement.read",
+        "inventory.warehouse.manage",
+        "inventory.warehouse.read",
+        "payroll.component.manage",
+        "payroll.component.read",
+        "payroll.payroll_run.approve",
+        "payroll.payroll_run.calculate",
+        "payroll.payroll_run.create",
+        "payroll.payroll_run.pay",
+        "payroll.payroll_run.post",
+        "payroll.payroll_run.read",
+        "payroll.payroll_run.void",
+        "payroll.payslip.export",
+        "payroll.payslip.publish",
+        "payroll.payslip.read",
+        "payroll.tax_bracket.manage",
+        "payroll.tax_bracket.read",
+        "projects.project.archive",
+        "projects.project.close",
+        "projects.project.create",
+        "projects.project.read",
+        "projects.project.update",
+        "projects.task.assign",
+        "projects.task.create",
+        "projects.task.read",
+        "projects.task.update",
+        "projects.timesheet_entry.approve",
+        "projects.timesheet_entry.create",
+        "projects.timesheet_entry.read",
+        "projects.timesheet_entry.submit",
+        "projects.timesheet_entry.update",
+        "purchasing.bill.approve",
+        "purchasing.bill.create",
+        "purchasing.bill.pay",
+        "purchasing.bill.post",
+        "purchasing.bill.read",
+        "purchasing.bill.update",
+        "purchasing.bill.void",
+        "purchasing.category.manage",
+        "purchasing.category.read",
+        "purchasing.expense.approve",
+        "purchasing.expense.create",
+        "purchasing.expense.read",
+        "purchasing.expense.reimburse",
+        "purchasing.expense.reject",
+        "purchasing.expense.submit",
+        "purchasing.expense.update",
+        "purchasing.vendor.archive",
+        "purchasing.vendor.create",
+        "purchasing.vendor.read",
+        "purchasing.vendor.update",
+        "reporting.aging.read",
+        "reporting.balance_sheet.read",
+        "reporting.cash_flow.read",
+        "reporting.payroll_register.read",
+        "reporting.profit_loss.read",
+        "reporting.report.export",
+        "reporting.tax_summary.read",
+        "reporting.trial_balance.read",
+        "sales.credit_note.apply",
+        "sales.credit_note.create",
+        "sales.credit_note.issue",
+        "sales.credit_note.read",
+        "sales.customer.archive",
+        "sales.customer.create",
+        "sales.customer.read",
+        "sales.customer.update",
+        "sales.invoice.create",
+        "sales.invoice.issue",
+        "sales.invoice.read",
+        "sales.invoice.send",
+        "sales.invoice.update",
+        "sales.invoice.void",
+        "sales.invoice.write_off",
+        "sales.recurring_profile.manage",
+        "sales.recurring_profile.read",
+        "sales.recurring_profile.run_now",
+        "settings.audit_log.export",
+        "settings.audit_log.read",
+        "settings.branding.manage",
+        "settings.branding.read",
+        "settings.export.create",
+        "settings.integration.manage",
+        "settings.integration.read",
+        "settings.notification.manage",
+        "settings.notification.read",
+        "settings.organisation.read",
+        "settings.organisation.update",
+        "settings.sequence.manage",
+        "settings.sequence.read"
+      ],
+      "scopes": [
+        {
+          "resource": "payroll_run",
+          "strategy": "all",
+          "parameters": {
+            "exclude_self_prepared": true,
+            "break_glass": true,
+            "audit_action": "payroll_approved"
+          }
+        }
+      ]
+    },
+    {
+      "code": "admin",
+      "name": "Admin",
+      "rank": 10,
+      "is_system": true,
+      "description": "Runs the workspace day to day: invites users, assigns roles of lower rank, configures integrations and reads every module. Deliberately holds no payroll approval by default, so that IT administration and money movement are not the same job.",
+      "permissions": [
+        "accounting.account.create",
+        "accounting.account.read",
+        "accounting.account.update",
+        "accounting.exchange_rate.read",
+        "accounting.fiscal_period.create",
+        "accounting.fiscal_period.read",
+        "accounting.journal.read",
+        "accounting.journal_entry.create",
+        "accounting.journal_entry.read",
+        "accounting.journal_entry.update",
+        "accounting.tax_rate.read",
+        "banking.bank_account.create",
+        "banking.bank_account.read",
+        "banking.bank_account.update",
+        "banking.gateway_config.read",
+        "banking.payment.create",
+        "banking.payment.read",
+        "banking.reconciliation.read",
+        "banking.refund.approve",
+        "banking.refund.read",
+        "banking.statement.import",
+        "banking.statement.read",
+        "banking.webhook_event.read",
+        "banking.webhook_event.replay",
+        "hr.attendance.approve",
+        "hr.attendance.create",
+        "hr.attendance.read",
+        "hr.attendance.update",
+        "hr.department.create",
+        "hr.department.read",
+        "hr.document.manage",
+        "hr.document.read",
+        "hr.employee.create",
+        "hr.employee.read",
+        "hr.employee.update",
+        "hr.leave_balance.read",
+        "hr.leave_request.cancel",
+        "hr.leave_request.create",
+        "hr.leave_request.read",
+        "hr.leave_request.update",
+        "hr.leave_type.read",
+        "iam.api_key.create",
+        "iam.api_key.read",
+        "iam.api_key.revoke",
+        "iam.membership.assign_role",
+        "iam.membership.read",
+        "iam.membership.revoke_role",
+        "iam.role.create",
+        "iam.role.delete",
+        "iam.role.read",
+        "iam.role.update",
+        "iam.user.deactivate",
+        "iam.user.invite",
+        "iam.user.read",
+        "iam.user.reset_password",
+        "iam.user.update",
+        "inventory.adjustment.create",
+        "inventory.adjustment.read",
+        "inventory.item.archive",
+        "inventory.item.create",
+        "inventory.item.read",
+        "inventory.item.update",
+        "inventory.price_list.manage",
+        "inventory.price_list.read",
+        "inventory.stock_movement.create",
+        "inventory.stock_movement.read",
+        "inventory.warehouse.manage",
+        "inventory.warehouse.read",
+        "payroll.component.read",
+        "payroll.payroll_run.create",
+        "payroll.payroll_run.read",
+        "payroll.payslip.read",
+        "payroll.tax_bracket.read",
+        "projects.project.archive",
+        "projects.project.close",
+        "projects.project.create",
+        "projects.project.read",
+        "projects.project.update",
+        "projects.task.assign",
+        "projects.task.create",
+        "projects.task.read",
+        "projects.task.update",
+        "projects.timesheet_entry.approve",
+        "projects.timesheet_entry.create",
+        "projects.timesheet_entry.read",
+        "projects.timesheet_entry.submit",
+        "projects.timesheet_entry.update",
+        "purchasing.bill.approve",
+        "purchasing.bill.create",
+        "purchasing.bill.read",
+        "purchasing.bill.update",
+        "purchasing.category.manage",
+        "purchasing.category.read",
+        "purchasing.expense.approve",
+        "purchasing.expense.create",
+        "purchasing.expense.read",
+        "purchasing.expense.reject",
+        "purchasing.expense.submit",
+        "purchasing.expense.update",
+        "purchasing.vendor.archive",
+        "purchasing.vendor.create",
+        "purchasing.vendor.read",
+        "reporting.aging.read",
+        "reporting.balance_sheet.read",
+        "reporting.cash_flow.read",
+        "reporting.profit_loss.read",
+        "reporting.report.export",
+        "reporting.tax_summary.read",
+        "reporting.trial_balance.read",
+        "sales.credit_note.create",
+        "sales.credit_note.read",
+        "sales.customer.archive",
+        "sales.customer.create",
+        "sales.customer.read",
+        "sales.customer.update",
+        "sales.invoice.create",
+        "sales.invoice.read",
+        "sales.invoice.send",
+        "sales.invoice.update",
+        "sales.recurring_profile.manage",
+        "sales.recurring_profile.read",
+        "settings.audit_log.export",
+        "settings.audit_log.read",
+        "settings.branding.manage",
+        "settings.branding.read",
+        "settings.integration.manage",
+        "settings.integration.read",
+        "settings.notification.manage",
+        "settings.notification.read",
+        "settings.organisation.read",
+        "settings.organisation.update",
+        "settings.sequence.read"
+      ],
+      "scopes": [
+        {
+          "resource": "payroll_run",
+          "strategy": "all",
+          "parameters": {
+            "exclude_self_prepared": true
+          }
+        },
+        {
+          "resource": "expense",
+          "strategy": "all",
+          "parameters": {
+            "max_amount": "50000.00",
+            "exclude_self_prepared": true
+          }
+        },
+        {
+          "resource": "refund",
+          "strategy": "all",
+          "parameters": {
+            "max_amount": "50000.00"
+          }
+        },
+        {
+          "resource": "bill",
+          "strategy": "all",
+          "parameters": {
+            "max_amount": "50000.00",
+            "exclude_self_prepared": true
+          }
+        },
+        {
+          "resource": "payslip",
+          "strategy": "none",
+          "parameters": {}
+        },
+        {
+          "resource": "employee",
+          "strategy": "all",
+          "parameters": {
+            "hide_compensation": true
+          }
+        }
+      ]
+    },
+    {
+      "code": "accountant",
+      "name": "Accountant",
+      "rank": 20,
+      "is_system": true,
+      "description": "Owns the general ledger, the sales and purchase sub-ledgers, banking and the fiscal calendar; posts, voids, reverses and closes periods. Explicitly excluded from `payroll.payroll_run.approve` so the person who calculates a payroll run is never the person who releases the money.",
+      "permissions": [
+        "accounting.account.archive",
+        "accounting.account.create",
+        "accounting.account.read",
+        "accounting.account.update",
+        "accounting.exchange_rate.manage",
+        "accounting.exchange_rate.read",
+        "accounting.fiscal_period.close",
+        "accounting.fiscal_period.create",
+        "accounting.fiscal_period.read",
+        "accounting.journal.manage",
+        "accounting.journal.read",
+        "accounting.journal_entry.create",
+        "accounting.journal_entry.post",
+        "accounting.journal_entry.read",
+        "accounting.journal_entry.reverse",
+        "accounting.journal_entry.update",
+        "accounting.journal_entry.void",
+        "accounting.period.post_to_soft_closed",
+        "accounting.tax_rate.manage",
+        "accounting.tax_rate.read",
+        "banking.bank_account.archive",
+        "banking.bank_account.create",
+        "banking.bank_account.read",
+        "banking.bank_account.update",
+        "banking.payment.allocate",
+        "banking.payment.create",
+        "banking.payment.read",
+        "banking.payment.void",
+        "banking.reconciliation.complete",
+        "banking.reconciliation.create",
+        "banking.reconciliation.match",
+        "banking.reconciliation.read",
+        "banking.refund.create",
+        "banking.refund.read",
+        "banking.statement.import",
+        "banking.statement.read",
+        "hr.department.read",
+        "hr.leave_request.cancel",
+        "hr.leave_request.create",
+        "hr.leave_request.read",
+        "hr.leave_request.update",
+        "hr.leave_type.read",
+        "inventory.adjustment.approve",
+        "inventory.adjustment.create",
+        "inventory.adjustment.read",
+        "inventory.item.archive",
+        "inventory.item.create",
+        "inventory.item.read",
+        "inventory.item.update",
+        "inventory.item.update_cost",
+        "inventory.price_list.manage",
+        "inventory.price_list.read",
+        "inventory.stock_movement.create",
+        "inventory.stock_movement.post",
+        "inventory.stock_movement.read",
+        "inventory.warehouse.manage",
+        "inventory.warehouse.read",
+        "payroll.payroll_run.calculate",
+        "payroll.payroll_run.pay",
+        "payroll.payroll_run.post",
+        "payroll.payroll_run.read",
+        "payroll.tax_bracket.read",
+        "projects.project.archive",
+        "projects.project.create",
+        "projects.project.read",
+        "projects.project.update",
+        "projects.task.read",
+        "projects.timesheet_entry.create",
+        "projects.timesheet_entry.read",
+        "projects.timesheet_entry.submit",
+        "projects.timesheet_entry.update",
+        "purchasing.bill.create",
+        "purchasing.bill.pay",
+        "purchasing.bill.post",
+        "purchasing.bill.read",
+        "purchasing.bill.update",
+        "purchasing.bill.void",
+        "purchasing.category.manage",
+        "purchasing.category.read",
+        "purchasing.expense.create",
+        "purchasing.expense.read",
+        "purchasing.expense.reimburse",
+        "purchasing.expense.submit",
+        "purchasing.expense.update",
+        "purchasing.vendor.archive",
+        "purchasing.vendor.create",
+        "purchasing.vendor.read",
+        "purchasing.vendor.update",
+        "reporting.aging.read",
+        "reporting.balance_sheet.read",
+        "reporting.cash_flow.read",
+        "reporting.payroll_register.read",
+        "reporting.profit_loss.read",
+        "reporting.report.export",
+        "reporting.tax_summary.read",
+        "reporting.trial_balance.read",
+        "sales.credit_note.apply",
+        "sales.credit_note.create",
+        "sales.credit_note.issue",
+        "sales.credit_note.read",
+        "sales.customer.archive",
+        "sales.customer.create",
+        "sales.customer.read",
+        "sales.customer.update",
+        "sales.invoice.create",
+        "sales.invoice.issue",
+        "sales.invoice.read",
+        "sales.invoice.send",
+        "sales.invoice.update",
+        "sales.invoice.void",
+        "sales.invoice.write_off",
+        "sales.recurring_profile.manage",
+        "sales.recurring_profile.read",
+        "sales.recurring_profile.run_now",
+        "settings.branding.read",
+        "settings.notification.read",
+        "settings.organisation.read",
+        "settings.sequence.read"
+      ],
+      "scopes": [
+        {
+          "resource": "payroll_run",
+          "strategy": "all",
+          "parameters": {
+            "approve": false
+          }
+        },
+        {
+          "resource": "payslip",
+          "strategy": "none",
+          "parameters": {}
+        },
+        {
+          "resource": "employee",
+          "strategy": "all",
+          "parameters": {
+            "hide_compensation": true
+          }
+        },
+        {
+          "resource": "journal_entry",
+          "strategy": "all",
+          "parameters": {}
+        },
+        {
+          "resource": "invoice",
+          "strategy": "all",
+          "parameters": {}
+        },
+        {
+          "resource": "payment",
+          "strategy": "all",
+          "parameters": {
+            "max_amount": "250000.00"
+          }
+        },
+        {
+          "resource": "expense",
+          "strategy": "all",
+          "parameters": {
+            "exclude_self_prepared": true
+          }
+        },
+        {
+          "resource": "leave_request",
+          "strategy": "own_record",
+          "parameters": {}
+        },
+        {
+          "resource": "timesheet_entry",
+          "strategy": "own_record",
+          "parameters": {}
+        }
+      ]
+    },
+    {
+      "code": "hr_manager",
+      "name": "HR Manager",
+      "rank": 20,
+      "is_system": true,
+      "description": "Owns the employee master file, the org chart, leave policy and the payroll cycle up to and including approval. Sees compensation data for the whole tenant but has no access to the ledger, so HR cannot post an adjusting entry to hide a payroll error.",
+      "permissions": [
+        "accounting.account.read",
+        "accounting.fiscal_period.read",
+        "accounting.tax_rate.read",
+        "hr.attendance.approve",
+        "hr.attendance.create",
+        "hr.attendance.read",
+        "hr.attendance.update",
+        "hr.department.archive",
+        "hr.department.create",
+        "hr.department.read",
+        "hr.department.update",
+        "hr.document.manage",
+        "hr.document.read",
+        "hr.employee.create",
+        "hr.employee.export",
+        "hr.employee.read",
+        "hr.employee.read_compensation",
+        "hr.employee.terminate",
+        "hr.employee.update",
+        "hr.leave_balance.adjust",
+        "hr.leave_balance.read",
+        "hr.leave_request.approve",
+        "hr.leave_request.cancel",
+        "hr.leave_request.create",
+        "hr.leave_request.read",
+        "hr.leave_request.reject",
+        "hr.leave_request.update",
+        "hr.leave_type.manage",
+        "hr.leave_type.read",
+        "iam.membership.assign_role",
+        "iam.membership.read",
+        "iam.membership.revoke_role",
+        "iam.role.read",
+        "iam.user.invite",
+        "iam.user.read",
+        "payroll.component.manage",
+        "payroll.component.read",
+        "payroll.payroll_run.approve",
+        "payroll.payroll_run.calculate",
+        "payroll.payroll_run.create",
+        "payroll.payroll_run.read",
+        "payroll.payslip.export",
+        "payroll.payslip.publish",
+        "payroll.payslip.read",
+        "payroll.tax_bracket.read",
+        "projects.timesheet_entry.create",
+        "projects.timesheet_entry.read",
+        "projects.timesheet_entry.submit",
+        "projects.timesheet_entry.update",
+        "purchasing.category.read",
+        "purchasing.expense.create",
+        "purchasing.expense.read",
+        "purchasing.expense.submit",
+        "purchasing.expense.update",
+        "reporting.payroll_register.read",
+        "reporting.report.export",
+        "settings.notification.read",
+        "settings.organisation.read"
+      ],
+      "scopes": [
+        {
+          "resource": "employee",
+          "strategy": "all",
+          "parameters": {}
+        },
+        {
+          "resource": "payslip",
+          "strategy": "all",
+          "parameters": {}
+        },
+        {
+          "resource": "payroll_run",
+          "strategy": "all",
+          "parameters": {
+            "exclude_self_prepared": true
+          }
+        },
+        {
+          "resource": "leave_request",
+          "strategy": "all",
+          "parameters": {
+            "exclude_self_prepared": true
+          }
+        },
+        {
+          "resource": "leave_balance",
+          "strategy": "all",
+          "parameters": {}
+        },
+        {
+          "resource": "attendance",
+          "strategy": "all",
+          "parameters": {}
+        },
+        {
+          "resource": "document",
+          "strategy": "all",
+          "parameters": {}
+        },
+        {
+          "resource": "department",
+          "strategy": "all",
+          "parameters": {}
+        },
+        {
+          "resource": "expense",
+          "strategy": "own_record",
+          "parameters": {}
+        },
+        {
+          "resource": "timesheet_entry",
+          "strategy": "own_record",
+          "parameters": {}
+        }
+      ]
+    },
+    {
+      "code": "department_manager",
+      "name": "Department Manager",
+      "rank": 30,
+      "is_system": true,
+      "description": "A line manager who approves the work and absence of the department subtree they own, and reads the operational data of that subtree only. Their authority is defined almost entirely by ABAC scope rather than by permission grants, which is why one role covers every department.",
+      "permissions": [
+        "accounting.account.read",
+        "accounting.fiscal_period.read",
+        "hr.attendance.approve",
+        "hr.attendance.create",
+        "hr.attendance.read",
+        "hr.attendance.update",
+        "hr.department.read",
+        "hr.document.manage",
+        "hr.document.read",
+        "hr.employee.read",
+        "hr.leave_balance.read",
+        "hr.leave_request.approve",
+        "hr.leave_request.cancel",
+        "hr.leave_request.create",
+        "hr.leave_request.read",
+        "hr.leave_request.reject",
+        "hr.leave_request.update",
+        "hr.leave_type.read",
+        "iam.membership.read",
+        "iam.role.read",
+        "iam.user.read",
+        "inventory.adjustment.create",
+        "inventory.adjustment.read",
+        "inventory.item.read",
+        "inventory.price_list.read",
+        "inventory.stock_movement.create",
+        "inventory.stock_movement.read",
+        "inventory.warehouse.read",
+        "projects.project.close",
+        "projects.project.create",
+        "projects.project.read",
+        "projects.project.update",
+        "projects.task.assign",
+        "projects.task.create",
+        "projects.task.read",
+        "projects.task.update",
+        "projects.timesheet_entry.approve",
+        "projects.timesheet_entry.create",
+        "projects.timesheet_entry.read",
+        "projects.timesheet_entry.submit",
+        "projects.timesheet_entry.update",
+        "purchasing.category.read",
+        "purchasing.expense.approve",
+        "purchasing.expense.create",
+        "purchasing.expense.read",
+        "purchasing.expense.reject",
+        "purchasing.expense.submit",
+        "purchasing.expense.update",
+        "reporting.aging.read",
+        "reporting.profit_loss.read",
+        "reporting.report.export",
+        "sales.credit_note.read",
+        "sales.customer.read",
+        "sales.invoice.read",
+        "settings.notification.read",
+        "settings.organisation.read"
+      ],
+      "scopes": [
+        {
+          "resource": "employee",
+          "strategy": "department_subtree",
+          "parameters": {}
+        },
+        {
+          "resource": "department",
+          "strategy": "department_subtree",
+          "parameters": {}
+        },
+        {
+          "resource": "leave_request",
+          "strategy": "department_subtree",
+          "parameters": {
+            "exclude_self_prepared": true
+          }
+        },
+        {
+          "resource": "attendance",
+          "strategy": "department_subtree",
+          "parameters": {}
+        },
+        {
+          "resource": "leave_balance",
+          "strategy": "department_subtree",
+          "parameters": {}
+        },
+        {
+          "resource": "document",
+          "strategy": "own_record",
+          "parameters": {}
+        },
+        {
+          "resource": "expense",
+          "strategy": "department_subtree",
+          "parameters": {
+            "max_amount": "5000.00",
+            "exclude_self_prepared": true
+          }
+        },
+        {
+          "resource": "timesheet_entry",
+          "strategy": "department_subtree",
+          "parameters": {
+            "exclude_self_prepared": true
+          }
+        },
+        {
+          "resource": "project",
+          "strategy": "assigned_projects",
+          "parameters": {}
+        },
+        {
+          "resource": "task",
+          "strategy": "assigned_projects",
+          "parameters": {}
+        },
+        {
+          "resource": "payslip",
+          "strategy": "none",
+          "parameters": {}
+        },
+        {
+          "resource": "invoice",
+          "strategy": "assigned_projects",
+          "parameters": {}
+        },
+        {
+          "resource": "customer",
+          "strategy": "assigned_projects",
+          "parameters": {}
+        }
+      ]
+    },
+    {
+      "code": "auditor",
+      "name": "Read-Only Auditor",
+      "rank": 40,
+      "is_system": true,
+      "description": "An external or internal reviewer granted time-boxed read access to the books, reports and audit log via `RoleAssignment.valid_until`. Holds no permission whose action mutates state, and is denied credential-surface reads (`api_key`, `gateway_config`) because an auditor never needs them.",
+      "permissions": [
+        "accounting.account.read",
+        "accounting.exchange_rate.read",
+        "accounting.fiscal_period.read",
+        "accounting.journal.read",
+        "accounting.journal_entry.read",
+        "accounting.tax_rate.read",
+        "banking.bank_account.read",
+        "banking.payment.read",
+        "banking.reconciliation.read",
+        "banking.refund.read",
+        "banking.statement.read",
+        "banking.webhook_event.read",
+        "hr.attendance.read",
+        "hr.department.read",
+        "hr.employee.read",
+        "hr.leave_balance.read",
+        "hr.leave_request.read",
+        "hr.leave_type.read",
+        "iam.membership.read",
+        "iam.role.read",
+        "iam.user.read",
+        "inventory.adjustment.read",
+        "inventory.item.read",
+        "inventory.price_list.read",
+        "inventory.stock_movement.read",
+        "inventory.warehouse.read",
+        "payroll.component.read",
+        "payroll.payroll_run.read",
+        "payroll.payslip.export",
+        "payroll.payslip.read",
+        "payroll.tax_bracket.read",
+        "projects.project.read",
+        "projects.task.read",
+        "projects.timesheet_entry.read",
+        "purchasing.bill.read",
+        "purchasing.category.read",
+        "purchasing.expense.read",
+        "purchasing.vendor.read",
+        "reporting.aging.read",
+        "reporting.balance_sheet.read",
+        "reporting.cash_flow.read",
+        "reporting.payroll_register.read",
+        "reporting.profit_loss.read",
+        "reporting.report.export",
+        "reporting.tax_summary.read",
+        "reporting.trial_balance.read",
+        "sales.credit_note.read",
+        "sales.customer.read",
+        "sales.invoice.read",
+        "sales.recurring_profile.read",
+        "settings.audit_log.export",
+        "settings.audit_log.read",
+        "settings.branding.read",
+        "settings.integration.read",
+        "settings.notification.read",
+        "settings.organisation.read",
+        "settings.sequence.read"
+      ],
+      "scopes": [
+        {
+          "resource": "journal_entry",
+          "strategy": "all",
+          "parameters": {
+            "read_only": true
+          }
+        },
+        {
+          "resource": "invoice",
+          "strategy": "all",
+          "parameters": {
+            "read_only": true
+          }
+        },
+        {
+          "resource": "payment",
+          "strategy": "all",
+          "parameters": {
+            "read_only": true
+          }
+        },
+        {
+          "resource": "employee",
+          "strategy": "all",
+          "parameters": {
+            "read_only": true,
+            "hide_compensation": true
+          }
+        },
+        {
+          "resource": "payslip",
+          "strategy": "none",
+          "parameters": {}
+        },
+        {
+          "resource": "document",
+          "strategy": "none",
+          "parameters": {}
+        },
+        {
+          "resource": "leave_request",
+          "strategy": "all",
+          "parameters": {
+            "read_only": true
+          }
+        }
+      ]
+    },
+    {
+      "code": "employee",
+      "name": "Employee",
+      "rank": 50,
+      "is_system": true,
+      "description": "The self-service role every staff member with a login receives: their own payslips, leave, attendance, expenses, timesheets and profile. Every grant is paired with an `own_record` scope, so the RBAC layer and the ABAC layer would both have to fail before one employee saw another's pay.",
+      "permissions": [
+        "hr.attendance.create",
+        "hr.attendance.read",
+        "hr.department.read",
+        "hr.document.manage",
+        "hr.document.read",
+        "hr.leave_balance.read",
+        "hr.leave_request.cancel",
+        "hr.leave_request.create",
+        "hr.leave_request.read",
+        "hr.leave_request.update",
+        "hr.leave_type.read",
+        "payroll.payslip.read",
+        "projects.project.read",
+        "projects.task.create",
+        "projects.task.read",
+        "projects.task.update",
+        "projects.timesheet_entry.create",
+        "projects.timesheet_entry.read",
+        "projects.timesheet_entry.submit",
+        "projects.timesheet_entry.update",
+        "purchasing.category.read",
+        "purchasing.expense.create",
+        "purchasing.expense.read",
+        "purchasing.expense.submit",
+        "purchasing.expense.update"
+      ],
+      "scopes": [
+        {
+          "resource": "payslip",
+          "strategy": "own_record",
+          "parameters": {}
+        },
+        {
+          "resource": "leave_request",
+          "strategy": "own_record",
+          "parameters": {}
+        },
+        {
+          "resource": "leave_balance",
+          "strategy": "own_record",
+          "parameters": {}
+        },
+        {
+          "resource": "attendance",
+          "strategy": "own_record",
+          "parameters": {}
+        },
+        {
+          "resource": "expense",
+          "strategy": "own_record",
+          "parameters": {}
+        },
+        {
+          "resource": "timesheet_entry",
+          "strategy": "own_record",
+          "parameters": {}
+        },
+        {
+          "resource": "document",
+          "strategy": "own_record",
+          "parameters": {}
+        },
+        {
+          "resource": "employee",
+          "strategy": "own_record",
+          "parameters": {}
+        },
+        {
+          "resource": "department",
+          "strategy": "own_department",
+          "parameters": {}
+        },
+        {
+          "resource": "project",
+          "strategy": "assigned_projects",
+          "parameters": {}
+        },
+        {
+          "resource": "task",
+          "strategy": "assigned_projects",
+          "parameters": {}
+        },
+        {
+          "resource": "payroll_run",
+          "strategy": "none",
+          "parameters": {}
+        },
+        {
+          "resource": "journal_entry",
+          "strategy": "none",
+          "parameters": {}
+        }
+      ]
+    }
+  ]
+}

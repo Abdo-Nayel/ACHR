@@ -1,0 +1,77 @@
+# ---------------------------------------------------------------------------
+# Runtime dependencies — everything needed to boot the API and workers.
+#
+# Pinning policy: a floor and a major ceiling (`>=x.y,<z`) rather than `~=x.y.z`.
+# Tight patch pins across ~40 packages guarantee an unsolvable graph within
+# months, because each one carries its own Django range. The floor is what we
+# actually require; the ceiling is where we expect breakage.
+#
+# Anything optional — PDF rendering, WebSockets, queue dashboards — lives in
+# optional.txt. Those pull native toolchains (GTK, Daphne) that fail loudly on
+# Windows and are not needed to run the API.
+# ---------------------------------------------------------------------------
+
+# --- Framework -------------------------------------------------------------
+# Django 5.1 is a hard floor: `CheckConstraint(condition=...)` arrived in 5.1
+# (5.0 spells it `check=`), and every model in this codebase uses it.
+Django>=5.1,<5.3
+djangorestframework>=3.15,<4
+djangorestframework-simplejwt[crypto]>=5.3,<6
+django-filter>=24.3
+drf-spectacular>=0.27,<1            # OpenAPI schema -> generated TS client
+drf-spectacular-sidecar>=2024.7.1   # serves Swagger/Redoc assets locally, no CDN
+django-cors-headers>=4.4,<5
+
+# --- Database --------------------------------------------------------------
+# psycopg 3. Chosen over psycopg2 for native pipeline mode and better
+# server-side cursor handling on the large ledger scans.
+psycopg[binary,pool]>=3.2,<4
+dj-database-url>=2.2,<4
+
+# --- Async / scheduling ----------------------------------------------------
+celery[redis]>=5.4,<6
+kombu>=5.4,<6
+# django-celery-beat must be >=2.7. 2.6.x declares `Django<5.1`, which makes
+# the whole requirements file unresolvable against our Django floor — that
+# single line is what produced `ResolutionImpossible` and left the venv empty.
+django-celery-beat>=2.7,<3
+django-celery-results>=2.5,<3
+# redis-py 6 changed the connection-pool kwargs that Django's built-in
+# RedisCache forwards; stay on 5.x until that is reworked.
+redis>=5.0,<6
+
+# --- Storage / files -------------------------------------------------------
+django-storages[s3]>=1.14,<2
+boto3>=1.35
+Pillow>=10.4                        # receipt and logo processing
+openpyxl>=3.1,<4                    # XLSX export of ledger + payroll registers
+
+# --- Config / logging ------------------------------------------------------
+python-decouple>=3.8
+structlog>=24.4                     # structured logs with the correlation filter
+django-structlog>=8.1
+python-json-logger>=2.0
+sentry-sdk[django,celery]>=2.13
+
+# --- Integrations ----------------------------------------------------------
+stripe>=10.7                        # card payments; webhook signature verification
+requests>=2.32
+httpx>=0.27                         # async gateway calls, timeouts by default
+tenacity>=9.0                       # explicit retry policies at integration edges
+
+# --- Domain helpers --------------------------------------------------------
+python-dateutil>=2.9                # fiscal calendars, recurring invoice rules
+babel>=2.16                         # locale-aware money/date formatting incl. ar
+phonenumbers>=8.13
+python-slugify>=8.0
+holidays>=0.56                      # payroll working-day + leave calculations
+
+# --- Security --------------------------------------------------------------
+argon2-cffi>=23.1                   # PASSWORD_HASHERS[0]; required, not optional
+cryptography>=43.0                  # JWT RS256 option, field-level encryption
+pyotp>=2.9                          # TOTP MFA
+
+# --- Serving ---------------------------------------------------------------
+gunicorn>=23.0                      # Linux/production
+uvicorn[standard]>=0.30             # ASGI
+whitenoise>=6.7

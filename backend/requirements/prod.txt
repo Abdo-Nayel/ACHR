@@ -1,0 +1,28 @@
+# ---------------------------------------------------------------------------
+# Production image dependencies.
+#
+# Deliberately thin: this is base.txt plus process management and metrics.
+# Nothing from dev.txt is installed — a debug toolbar or a shell_plus in a
+# production image is an interactive foothold next to the payroll tables.
+# ---------------------------------------------------------------------------
+-r base.txt
+
+# --- Process management ----------------------------------------------------
+gunicorn~=23.0.0
+gevent~=24.2.1                      # for the notification/webhook worker class
+setproctitle~=1.3.3                 # readable process names in `ps` and in Sentry
+
+# --- Metrics / health ------------------------------------------------------
+django-prometheus~=2.3.1
+django-health-check~=3.18.3         # backs /readyz: DB, Redis, broker, storage
+
+# --- Connection pooling ----------------------------------------------------
+# psycopg's pool is used when pgbouncer is absent. When pgbouncer IS present it
+# runs in TRANSACTION mode, which is why CONN_MAX_AGE is 0 and every tenant
+# binding uses SET LOCAL (see config/settings/base.py). Getting this pair wrong
+# leaks `app.current_tenant` between requests.
+psycopg-pool~=3.2.2
+
+# --- Hardening -------------------------------------------------------------
+django-csp~=3.8                     # Content-Security-Policy headers
+django-ratelimit~=4.1.0             # pre-DRF throttle on the auth endpoints

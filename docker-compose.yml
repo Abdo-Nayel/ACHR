@@ -1,0 +1,248 @@
+# =============================================================================
+# Local development stack.
+#
+# Deliberately mirrors production topology in the ways that matter for
+# correctness:
+#   * PostgreSQL 16 with a NON-OWNER application role, so Row-Level Security is
+#     actually exercised locally. Running as the owner/superuser locally is how
+#     an isolation bug reaches production: every test passes on a machine where
+#     RLS is bypassed.
+#   * Separate worker processes per queue, so acks_late/prefetch behaviour and
+#     the payroll queue's serialisation are real, not simulated.
+#   * Beat in its own container: two beats means every periodic task fires
+#     twice.
+# =============================================================================
+
+name: erp
+
+x-django-env: &django-env
+  DJANGO_SETTINGS_MODULE: config.settings.dev
+  DJANGO_SECRET_KEY: dev-only-not-a-secret
+  DJANGO_DEBUG: "true"
+  DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,0.0.0.0,api
+  POSTGRES_DB: erp
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  # The application connects as erp_app: not the owner, not a superuser, no
+  # BYPASSRLS. See infra/postgres/init/10-roles.sql.
+  POSTGRES_APP_USER: erp_app
+  POSTGRES_APP_PASSWORD: erp_app
+  # Migrations run as the owner. Two roles, two jobs.
+  POSTGRES_MIGRATION_USER: erp_migrator
+  POSTGRES_MIGRATION_PASSWORD: erp_migrator
+  CELERY_BROKER_URL: redis://redis:6379/0
+  CELERY_RESULT_BACKEND: redis://redis:6379/1
+  REDIS_CACHE_URL: redis://redis:6379/2
+  REDIS_SHARED_CACHE_URL: redis://redis:6379/3
+  REDIS_LOCK_URL: redis://redis:6379/4
+  CORS_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:8081
+  LOG_LEVEL: DEBUG
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: infra/docker/Dockerfile
+    target: dev
+  image: erp-backend:dev
+  environment: *django-env
+  volumes:
+    - ./backend:/app/backend:cached
+    - media:/app/backend/media
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: erp
+      # This is the SUPERUSER. The application never uses it; the init scripts
+      # use it once to create erp_migrator (owner) and erp_app (runtime).
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+      # C collation: deterministic, faster index scans, and it never changes
+      # under a glibc upgrade — a collation change silently corrupts btree
+      # indexes on text columns (invoice numbers, account codes).
+      LANG: C
+    command:
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - work_mem=16MB
+      - -c
+      - log_min_duration_statement=500
+      - -c
+      - row_security=on
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      # -U postgres -d erp: the default `pg_isready` with no args reports ready
+      # before the init scripts finish, and the api container then races the
+      # role creation.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d erp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 512mb
+      # noeviction, NOT allkeys-lru: this Redis is the Celery broker as well as
+      # the cache. Evicting a broker key silently drops a queued payroll task.
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - redisdata:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  api:
+    <<: *app
+    command: >
+      sh -c "python backend/manage.py migrate --noinput &&
+             python backend/manage.py runserver 0.0.0.0:8000"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      # /healthz is liveness only and never touches the database: a DB outage
+      # must not make Docker/Kubernetes restart a healthy process.
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz', timeout=3).status==200 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+
+  # ---------------------------------------------------------------------------
+  # General worker: default, payments, reports, notifications.
+  worker:
+    <<: *app
+    command: >
+      celery -A config worker
+        --loglevel=INFO
+        --queues=default,payments,reports,notifications
+        --concurrency=4
+        --prefetch-multiplier=1
+        --max-tasks-per-child=200
+        --hostname=general@%h
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A config inspect ping -d general@$$HOSTNAME || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ---------------------------------------------------------------------------
+  # Payroll worker: isolated, low concurrency, prefetch 1.
+  # A payroll run holds row locks on every payslip it touches; two runs on one
+  # worker serialise into a lock convoy that looks like a hang to the customer.
+  worker-payroll:
+    <<: *app
+    command: >
+      celery -A config worker
+        --loglevel=INFO
+        --queues=payroll
+        --concurrency=2
+        --prefetch-multiplier=1
+        --max-tasks-per-child=50
+        --hostname=payroll@%h
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A config inspect ping -d payroll@$$HOSTNAME || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ---------------------------------------------------------------------------
+  # Exactly ONE beat. A second scheduler double-fires every periodic task —
+  # which for accrue_leave means crediting every employee twice.
+  beat:
+    <<: *app
+    command: >
+      celery -A config beat
+        --loglevel=INFO
+        --scheduler=django_celery_beat.schedulers:DatabaseScheduler
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/celerybeat.pid || pgrep -f 'celery.*beat' > /dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  flower:
+    <<: *app
+    command: celery -A config flower --port=5555 --basic-auth=dev:dev
+    ports:
+      - "5555:5555"
+    profiles: ["tools"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5555/healthcheck || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    profiles: ["tools"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8025/readyz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  pgdata:
+  redisdata:
+  media:

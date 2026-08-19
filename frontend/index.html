@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ACHR ERP — Accounting &amp; HR</title>
+<style>
+/* ── design tokens ──────────────────────────────────────────────────────
+   Every colour in this file is a token. Nothing below this block hard-codes
+   a hex value, which is the only reason a dark theme is a 30-line override
+   rather than a second stylesheet that drifts out of sync with the first.
+
+   Three states, deliberately:
+     :root                                    light, and the fallback
+     @media (prefers-color-scheme:dark)       follows the OS, unless the user
+       guarded by :not([data-theme=light])    has explicitly chosen light
+     [data-theme=dark] / [data-theme=light]   an explicit choice always wins
+
+   Without the :not() guard, a user on a dark OS who picks "light" in the
+   toggle gets the dark media block applied on top and a half-dark UI.       */
+:root{
+  --bg:#f4f6fa; --panel:#fff; --panel-2:#f8fafc; --panel-3:#f1f4f9;
+  --line:#e4e8f0; --line-soft:#eef1f7;
+  --fg:#101828; --fg-2:#344054; --mut:#667085; --mut-2:#98a2b3;
+  --acc:#4f46e5; --acc-d:#4338ca; --acc-l:#eef2ff; --on-acc:#fff;
+  --ok:#067647; --ok-bg:#ecfdf3; --warn:#b54708; --warn-bg:#fffaeb;
+  --dang:#b42318; --dang-bg:#fef3f2;
+  --side:#0f1421; --side-fg:#98a2b3; --side-hi:#1d2939; --side-deep:#0a0e18;
+  --side-brand:#fff;
+  --field:#fff; --field-line:#d0d5dd; --ring:rgba(79,70,229,.14);
+  --sk1:#eef1f6; --sk2:#f8fafc;
+  --ov:rgba(16,24,40,.45);
+  --hero-a:#131a2e; --hero-b:#2a2f7a; --hero-c:#4f46e5;
+  --hero-fg:#c7d0e6; --hero-li:#dfe6f5; --hero-b2:#a5b4fc;
+  /* Chart series. Read from JS via getComputedStyle so the SVGs re-colour
+     with the theme instead of staying light-mode blue on a dark panel. */
+  --c1:#4f46e5; --c2:#f59e0b; --c3:#059669; --c4:#a855f7; --c5:#f97316;
+  --c6:#64748b;
+  --r:10px; --r-sm:7px;
+  --sh:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.06);
+  --sh2:0 6px 20px rgba(16,24,40,.10);
+  --sh3:0 20px 60px rgba(16,24,40,.28);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0a0e17; --panel:#121826; --panel-2:#171e2e; --panel-3:#1c2436;
+    --line:#242d40; --line-soft:#1c2436;
+    --fg:#e9edf5; --fg-2:#c3ccdd; --mut:#8e9bb3; --mut-2:#6b788f;
+    --acc:#818cf8; --acc-d:#a5b4fc; --acc-l:#1e2440; --on-acc:#0a0e17;
+    --ok:#3ddc84; --ok-bg:#0c2a1d; --warn:#fbbf24; --warn-bg:#2c2410;
+    --dang:#fb7185; --dang-bg:#341a20;
+    --side:#0c111c; --side-fg:#8e9bb3; --side-hi:#1a2233; --side-deep:#080c14;
+    --side-brand:#e9edf5;
+    --field:#161d2c; --field-line:#2c364b; --ring:rgba(129,140,248,.20);
+    --sk1:#1a2130; --sk2:#222b3d;
+    --ov:rgba(2,5,12,.66);
+    --hero-a:#0c111c; --hero-b:#1e2450; --hero-c:#4338ca;
+    --hero-fg:#9aa6c2; --hero-li:#c3ccdd; --hero-b2:#a5b4fc;
+    --c1:#818cf8; --c2:#fbbf24; --c3:#34d399; --c4:#c084fc; --c5:#fb923c;
+    --c6:#94a3b8;
+    /* Shadows are near-invisible on a dark ground; they carry depth here by
+       being darker than the background rather than softer than it. */
+    --sh:0 1px 2px rgba(0,0,0,.30),0 1px 3px rgba(0,0,0,.24);
+    --sh2:0 6px 22px rgba(0,0,0,.42);
+    --sh3:0 20px 60px rgba(0,0,0,.62);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0a0e17; --panel:#121826; --panel-2:#171e2e; --panel-3:#1c2436;
+  --line:#242d40; --line-soft:#1c2436;
+  --fg:#e9edf5; --fg-2:#c3ccdd; --mut:#8e9bb3; --mut-2:#6b788f;
+  --acc:#818cf8; --acc-d:#a5b4fc; --acc-l:#1e2440; --on-acc:#0a0e17;
+  --ok:#3ddc84; --ok-bg:#0c2a1d; --warn:#fbbf24; --warn-bg:#2c2410;
+  --dang:#fb7185; --dang-bg:#341a20;
+  --side:#0c111c; --side-fg:#8e9bb3; --side-hi:#1a2233; --side-deep:#080c14;
+  --side-brand:#e9edf5;
+  --field:#161d2c; --field-line:#2c364b; --ring:rgba(129,140,248,.20);
+  --sk1:#1a2130; --sk2:#222b3d;
+  --ov:rgba(2,5,12,.66);
+  --hero-a:#0c111c; --hero-b:#1e2450; --hero-c:#4338ca;
+  --hero-fg:#9aa6c2; --hero-li:#c3ccdd; --hero-b2:#a5b4fc;
+  --c1:#818cf8; --c2:#fbbf24; --c3:#34d399; --c4:#c084fc; --c5:#fb923c;
+  --c6:#94a3b8;
+  --sh:0 1px 2px rgba(0,0,0,.30),0 1px 3px rgba(0,0,0,.24);
+  --sh2:0 6px 22px rgba(0,0,0,.42);
+  --sh3:0 20px 60px rgba(0,0,0,.62);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:14px/1.6 "Inter",-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  /* Themed via the toggle, so the repaint must not look like a page reload. */
+  transition:background-color .28s ease,color .28s ease}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:14px}
+.hidden{display:none!important}
+a{color:var(--acc);text-decoration:none}
+::selection{background:var(--acc-l);color:var(--acc-d)}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes shimmer{0%{background-position:-500px 0}100%{background-position:500px 0}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pop{0%{transform:scale(.96);opacity:0}100%{transform:none;opacity:1}}
+@keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
+@keyframes grow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes dash{from{stroke-dashoffset:var(--len)}to{stroke-dashoffset:0}}
+/* Page transition: the whole view area, not each panel. Short and small —
+   a long slide makes navigation feel slower than it is. */
+@keyframes viewIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.anim{animation:fadeUp .42s cubic-bezier(.22,.8,.3,1) both}
+.d1{animation-delay:.05s}.d2{animation-delay:.1s}.d3{animation-delay:.16s}
+.d4{animation-delay:.22s}.d5{animation-delay:.28s}.d6{animation-delay:.34s}
+#view.swap{animation:viewIn .3s cubic-bezier(.22,.8,.3,1) both}
+/* One switch for the whole file. Vestibular disorders are not an edge case,
+   and a dashboard that counts numbers up is exactly the kind of motion the
+   media query exists for — countUp() honours it in JS as well. */
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+.sk{background:linear-gradient(90deg,var(--sk1) 25%,var(--sk2) 50%,var(--sk1) 75%);
+  background-size:1000px 100%;animation:shimmer 1.3s infinite linear;border-radius:5px;
+  height:12px;margin:9px 0}
+.spin{width:15px;height:15px;border:2px solid var(--line);border-top-color:var(--acc);
+  border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
+
+/* ── auth ── */
+.auth{min-height:100vh;display:flex}
+.authL{flex:1;background:linear-gradient(150deg,var(--hero-a),var(--hero-b) 60%,var(--hero-c));
+  color:#fff;padding:56px 52px;display:flex;flex-direction:column;justify-content:center;
+  position:relative;overflow:hidden}
+/* Soft radial bloom over the gradient. Pointer-events off so it can never
+   swallow a click on the form behind it. */
+.authL::after{content:'';position:absolute;width:520px;height:520px;right:-160px;top:-140px;
+  border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.10),transparent 70%);
+  pointer-events:none}
+.authL h2{font-size:31px;margin:0 0 14px;font-weight:650;letter-spacing:-.025em;line-height:1.24;
+  position:relative}
+.authL p{color:var(--hero-fg);font-size:14.5px;max-width:400px;margin:0 0 30px;position:relative}
+.authL ul{position:relative;padding:0;margin:0}
+.authL li{list-style:none;padding:7px 0;color:var(--hero-li);font-size:13.5px;display:flex;gap:10px}
+.authL li b{color:var(--hero-b2)}
+.authR{width:min(520px,46%);background:var(--panel);display:flex;align-items:center;
+  justify-content:center;padding:40px 44px;overflow:auto}
+.card{width:100%;max-width:400px}
+.logo{display:flex;align-items:center;gap:10px;margin-bottom:26px}
+.logo .m{width:34px;height:34px;border-radius:10px;background:var(--acc);color:var(--on-acc);
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:17px;
+  box-shadow:0 4px 12px var(--ring)}
+.logo b{font-size:19px;letter-spacing:-.01em}
+h1{margin:0 0 6px;font-size:23px;font-weight:650;letter-spacing:-.02em}
+.sub{margin:0 0 22px;color:var(--mut);font-size:13.5px}
+label{display:block;margin:14px 0 5px;font-size:12.5px;font-weight:600;color:var(--fg-2)}
+label.req::after{content:' *';color:var(--dang)}
+input,select{width:100%;padding:10px 12px;border:1px solid var(--field-line);border-radius:var(--r-sm);
+  background:var(--field);color:var(--fg);transition:border-color .15s,box-shadow .15s}
+input:focus,select:focus{outline:0;border-color:var(--acc);box-shadow:0 0 0 3px var(--ring)}
+.btn{background:var(--acc);color:var(--on-acc);border:0;border-radius:var(--r-sm);padding:9px 16px;
+  font-size:13.5px;font-weight:550;transition:background .15s,transform .12s,box-shadow .15s}
+.btn:hover{background:var(--acc-d);box-shadow:0 4px 14px var(--ring);transform:translateY(-1px)}
+.btn:active{transform:translateY(1px);box-shadow:none}
+.btn:disabled{opacity:.6;cursor:default;transform:none;box-shadow:none}
+.btn.w{width:100%;margin-top:22px;padding:11px}
+.btn.sec{background:var(--panel);color:var(--fg-2);border:1px solid var(--field-line)}
+.btn.sec:hover{background:var(--panel-3);box-shadow:none;transform:none}
+.btn.sm{padding:5px 11px;font-size:12.5px}
+.btn.dang{background:var(--dang);color:#fff}
+.err{background:var(--dang-bg);color:var(--dang);padding:10px 12px;border-radius:var(--r-sm);
+  font-size:12.5px;margin-top:14px;animation:pop .25s both}
+.hint{margin-top:22px;padding-top:16px;border-top:1px solid var(--line);
+  font-size:12px;color:var(--mut);line-height:1.9}
+.hint code{background:var(--panel-3);padding:1px 5px;border-radius:3px}
+.tabs{display:flex;gap:2px;background:var(--panel-3);padding:3px;border-radius:9px;margin-bottom:20px}
+.tabs button{flex:1;padding:7px;border:0;background:0;border-radius:var(--r-sm);font-size:13px;
+  color:var(--mut);font-weight:550;transition:.15s}
+.tabs button.on{background:var(--panel);color:var(--fg);box-shadow:var(--sh)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+/* ── shell ── */
+#app{display:flex;min-height:100vh}
+aside{width:206px;background:var(--side);color:var(--side-fg);flex-shrink:0;display:flex;
+  flex-direction:column;position:sticky;top:0;height:100vh}
+.brand{padding:14px 16px;display:flex;align-items:center;gap:9px;color:var(--side-brand);
+  font-weight:650;font-size:14.5px;border-bottom:1px solid var(--side-hi)}
+.brand .m{width:25px;height:25px;border-radius:var(--r-sm);background:var(--acc);color:var(--on-acc);
+  display:flex;align-items:center;justify-content:center;font-size:12px}
+nav{padding:5px 0;flex:1;overflow:auto}
+nav::-webkit-scrollbar{width:5px}
+nav::-webkit-scrollbar-thumb{background:var(--side-hi);border-radius:3px}
+.top{display:flex;align-items:center;gap:10px;padding:8px 14px;color:var(--side-fg);
+  font-size:13px;cursor:pointer;border-left:3px solid transparent;user-select:none;
+  transition:background .13s,color .13s}
+.top:hover{background:var(--side-hi);color:var(--side-brand)}
+.top.on{background:var(--side-hi);color:var(--side-brand);border-left-color:var(--acc)}
+.top .ic{width:15px;text-align:center;font-size:13px;opacity:.9;flex-shrink:0}
+.top .cv{margin-left:auto;font-size:8px;opacity:.55;transition:transform .18s}
+.top.open .cv{transform:rotate(90deg)}
+.sub2{max-height:0;overflow:hidden;background:var(--side-deep);transition:max-height .22s ease}
+.sub2.open{max-height:340px}
+.sub2 a{display:block;padding:6px 14px 6px 40px;color:var(--side-fg);font-size:12.5px;
+  border-left:3px solid transparent;transition:.13s}
+.sub2 a:hover{background:var(--side-hi);color:var(--side-brand)}
+.sub2 a.on{background:var(--side-hi);color:var(--side-brand);border-left-color:var(--acc);font-weight:550}
+.who{padding:11px 14px;border-top:1px solid var(--side-hi);font-size:11.5px}
+.who b{display:block;color:var(--side-brand);font-size:12.5px}
+.who a{color:var(--mut-2);font-size:11px}
+main{flex:1;min-width:0}
+header{background:var(--panel);border-bottom:1px solid var(--line);padding:0 20px;height:52px;
+  display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:9;
+  gap:12px}
+header .org{font-size:12.5px;color:var(--mut);font-weight:650;letter-spacing:.04em}
+header .r{display:flex;align-items:center;gap:11px}
+.navbtn{display:none;width:30px;height:30px;border:1px solid var(--line);
+  border-radius:var(--r-sm);background:var(--panel-3);color:var(--fg);font-size:15px;
+  line-height:1;align-items:center;justify-content:center;flex-shrink:0}
+.navbtn:hover{background:var(--acc-l);color:var(--acc)}
+.plus{width:27px;height:27px;border-radius:var(--r-sm);background:var(--acc);color:var(--on-acc);
+  border:0;font-size:17px;line-height:1;display:flex;align-items:center;justify-content:center;
+  transition:transform .18s cubic-bezier(.22,.8,.3,1),box-shadow .15s}
+.plus:hover{transform:rotate(90deg) scale(1.06);box-shadow:0 4px 14px var(--ring)}
+/* Theme toggle. Icon swaps in JS; the rotation makes the swap read as one
+   motion rather than two unrelated glyphs. */
+.thm{width:27px;height:27px;border-radius:var(--r-sm);background:var(--panel-3);color:var(--mut);
+  border:1px solid var(--line);font-size:13px;line-height:1;display:flex;align-items:center;
+  justify-content:center;transition:transform .3s cubic-bezier(.22,.8,.3,1),color .15s,background .15s}
+.thm:hover{color:var(--acc);background:var(--acc-l);transform:rotate(-25deg)}
+.pagehead{padding:17px 20px 0;display:flex;align-items:center;justify-content:space-between}
+.pagehead h2{margin:0;font-size:19px;font-weight:650;letter-spacing:-.02em}
+.body{padding:14px 20px 44px}
+
+/* ── widgets ── */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  overflow:hidden;margin-bottom:16px;box-shadow:var(--sh)}
+.panel .ph{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;
+  align-items:center;justify-content:space-between}
+.panel .ph h3{margin:0;font-size:13.5px;font-weight:650}
+.pb{padding:16px}
+.g2c{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.g3c{display:grid;grid-template-columns:2fr 1fr;gap:16px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  padding:13px 15px;box-shadow:var(--sh);position:relative;overflow:hidden;
+  transition:transform .18s cubic-bezier(.22,.8,.3,1),box-shadow .18s,border-color .18s}
+/* Accent rail that wipes in on hover. transform, not width, so it composites
+   on the GPU and never reflows the card next to it. */
+.kpi::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--acc);
+  transform:scaleY(0);transform-origin:bottom;transition:transform .22s cubic-bezier(.22,.8,.3,1)}
+.kpi:hover{transform:translateY(-3px);box-shadow:var(--sh2);border-color:var(--acc-l)}
+.kpi:hover::before{transform:scaleY(1)}
+.lbl{color:var(--mut);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:650}
+.kpi b{display:block;font-size:21px;font-weight:650;margin-top:6px;letter-spacing:-.025em;
+  font-variant-numeric:tabular-nums}
+.kpi i{font-style:normal;font-size:11px;color:var(--mut)}
+.big{font-size:26px;font-weight:650;letter-spacing:-.03em;margin:6px 0 3px;
+  font-variant-numeric:tabular-nums}
+.bar{height:7px;border-radius:4px;background:var(--panel-3);margin:12px 0 10px;overflow:hidden;display:flex}
+.bar i{display:block;height:100%;transition:width .8s cubic-bezier(.22,.8,.3,1)}
+.legend{display:flex;gap:20px;font-size:11.5px;color:var(--mut);flex-wrap:wrap}
+.legend b{color:var(--fg)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.mrow{display:flex;justify-content:space-between;padding:7px 0;font-size:13px;
+  border-bottom:1px solid var(--line-soft)}
+.mrow:last-child{border-bottom:0}
+.mrow b{font-variant-numeric:tabular-nums}
+.mrow.tot{border-top:1px solid var(--line);border-bottom:0;margin-top:6px;padding-top:10px;
+  font-weight:650;font-size:15px}
+.pos{color:var(--ok)}.neg{color:var(--dang)}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:9px 14px;font-size:10.5px;color:var(--mut);background:var(--panel-2);
+  border-bottom:1px solid var(--line);font-weight:650;letter-spacing:.06em;
+  text-transform:uppercase;white-space:nowrap}
+td{padding:10px 14px;border-bottom:1px solid var(--line-soft);font-size:13px}
+tr:last-child td{border-bottom:0}
+tbody tr{transition:background .12s}
+tbody tr:hover{background:var(--panel-2)}
+.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
+.tag{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10.5px;font-weight:650;
+  text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
+.t-ok{background:var(--ok-bg);color:var(--ok)}.t-warn{background:var(--warn-bg);color:var(--warn)}
+.t-dang{background:var(--dang-bg);color:var(--dang)}.t-mut{background:var(--panel-3);color:var(--mut)}
+.t-info{background:var(--acc-l);color:var(--acc-d)}
+.empty{padding:52px 20px;text-align:center;color:var(--mut)}
+.empty h4{margin:0 0 6px;font-size:15px;color:var(--fg);font-weight:650}
+.empty p{margin:0 0 16px;font-size:13px}
+.tools{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.tools input,.tools select{width:auto;min-width:145px;padding:7px 10px}
+.qc{position:absolute;top:48px;right:16px;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--r);box-shadow:var(--sh2);padding:16px 6px;z-index:40;display:flex;
+  animation:pop .18s both}
+.qc .col{padding:0 14px;border-right:1px solid var(--line-soft);min-width:146px}
+.qc .col:last-child{border-right:0}
+.qc h5{margin:0 0 9px;font-size:10px;letter-spacing:.08em;color:var(--mut);font-weight:700}
+.qc a{display:block;padding:5px 0;font-size:12.5px;color:var(--fg-2);transition:.14s}
+.qc a:hover{color:var(--acc);transform:translateX(3px)}
+.qc a::before{content:'\002B';margin-right:8px;color:var(--mut-2);font-weight:700}
+.ov{position:fixed;inset:0;background:var(--ov);display:flex;align-items:flex-start;
+  justify-content:center;z-index:50;padding:40px 20px;overflow:auto;animation:fadeIn .18s both;
+  backdrop-filter:blur(3px)}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:12px;width:100%;
+  max-width:840px;box-shadow:var(--sh3);animation:pop .22s both}
+.modal .mh{padding:15px 20px;border-bottom:1px solid var(--line);display:flex;
+  justify-content:space-between;align-items:center}
+.modal .mh h3{margin:0;font-size:16px;font-weight:650}
+.modal .mb{padding:18px 20px}
+.modal .mf{padding:13px 20px;border-top:1px solid var(--line);display:flex;gap:8px;
+  background:var(--panel-2)}
+.x{background:0;border:0;font-size:22px;color:var(--mut);line-height:1;padding:0;
+  transition:color .15s,transform .15s}
+.x:hover{color:var(--dang);transform:scale(1.15)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.lines th{background:var(--panel-3);text-transform:none;font-size:11px;letter-spacing:0}
+.lines td{padding:5px 7px;border-bottom:1px solid var(--line-soft)}
+.lines input{padding:6px 8px}
+.totbox{margin-top:14px;display:flex;justify-content:flex-end}
+.totbox>div{min-width:270px;background:var(--panel-2);border:1px solid var(--line);
+  border-radius:var(--r);padding:12px 14px}
+.totrow{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;
+  font-variant-numeric:tabular-nums}
+.totrow.g{border-top:1px solid var(--line);margin-top:6px;padding-top:9px;font-weight:650;font-size:15px}
+.toast{position:fixed;bottom:20px;right:20px;background:var(--side);color:#fff;padding:12px 17px;
+  border-radius:9px;font-size:13px;z-index:80;box-shadow:var(--sh3);border:1px solid var(--side-hi);
+  max-width:420px;animation:slideIn .25s both}
+.toast.bad{background:var(--dang);border-color:var(--dang)}
+.toast.ok{background:var(--ok);border-color:var(--ok)}
+.note{font-size:11.5px;color:var(--mut);margin-top:7px}
+.req::after{content:' *';color:var(--dang)}
+.avat{width:28px;height:28px;border-radius:50%;background:var(--acc-l);color:var(--acc-d);
+  display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;
+  font-weight:650;margin-right:9px;flex-shrink:0}
+.uc{display:flex;align-items:center}
+
+/* ── attachments ── */
+.drop{border:1.5px dashed var(--field-line);border-radius:var(--r);padding:18px;
+  text-align:center;color:var(--mut);font-size:12.5px;cursor:pointer;
+  transition:border-color .15s,background .15s}
+.drop:hover{border-color:var(--acc);background:var(--acc-l)}
+.drop.over{border-color:var(--acc);background:var(--acc-l);border-style:solid}
+.drop b{color:var(--fg)}
+.att{display:flex;align-items:center;gap:10px;padding:7px 10px;font-size:12.5px;
+  border:1px solid var(--line);border-radius:var(--r-sm);margin-top:6px;
+  background:var(--panel-2)}
+.att-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Queued but not yet stored — visibly different, so a file that has not
+   uploaded is never mistaken for one that has. */
+.att.pending{border-style:dashed;opacity:.78}
+
+/* ── brand mark ──
+   Inline SVG rather than a font icon or an <img>: it inherits the theme, it
+   prints (an <img> from a data URI is fine but a remote one is not), and it
+   costs no request. The "A" is drawn as a path so it stays crisp at 22px in
+   the sidebar and 34px on the sign-in card without shipping two assets. */
+.mk{width:26px;height:26px;flex-shrink:0;border-radius:8px;
+  box-shadow:0 2px 8px var(--ring)}
+.mk.lg{width:34px;height:34px;border-radius:10px}
+.brand .tx,.logo b{letter-spacing:-.02em}
+.brand .tx i,.logo b i{font-style:normal;font-weight:500;opacity:.62;
+  margin-left:.32em;letter-spacing:.06em;font-size:.78em}
+
+/* ── print ──
+   Printing an SPA prints the whole SPA: sidebar, nav, and whatever toast was
+   on screen. `printDoc()` sets `.printing` on <body> and everything except
+   `#print-root` is removed from the printed flow — visibility:hidden would
+   still reserve the space and produce blank leading pages.
+
+   Colours are forced to black on white: the dark theme's tokens print as a
+   solid dark rectangle that empties a toner cartridge and is unreadable
+   faxed or scanned, which is still how a lot of finance departments move a
+   voucher around. */
+@media print{
+  body.printing *{visibility:hidden!important}
+  body.printing #print-root,body.printing #print-root *{visibility:visible!important}
+  body.printing #print-root{position:absolute;inset:0 auto auto 0;width:100%;
+    padding:0;margin:0;background:#fff;color:#000}
+  body.printing #print-root th,body.printing #print-root td{
+    color:#000;background:#fff;border-color:#999}
+  body.printing #print-root a{color:#000;text-decoration:none}
+  body.printing .ov{position:static;background:#fff;padding:0;backdrop-filter:none}
+  body.printing .modal{box-shadow:none;border:0;max-width:100%}
+  body.printing .mh,body.printing .mf{display:none!important}
+  @page{margin:14mm}
+}
+
+/* ── responsive ────────────────────────────────────────────────────────────
+   Three sizes, and each one changes something structural rather than just
+   shrinking type.
+
+   The previous single 900px rule collapsed the sidebar to a 58px icon rail
+   *and* forced `.sub2.open{max-height:0}` — so on a phone every grouped
+   screen (Invoices, Payslips, Bank Setup — most of the product) became
+   unreachable. An icon rail only works when every destination is a top-level
+   icon, and this menu has forty.
+
+   So below 900px the sidebar becomes an off-canvas drawer instead: full
+   labels, working submenus, opened by a button in the header and dismissed by
+   tapping the scrim. Nothing is hidden; it is just not always on screen.     */
+
+/* Tables are the other structural problem. They live inside `.panel`, which
+   sets `overflow:hidden` to keep its rounded corners — so a 780px table in a
+   375px viewport was *clipped*, not scrollable, and the right-hand columns
+   were simply unreachable. Letting the panel scroll horizontally keeps the
+   corners and gives the columns back. Applied at every size, because a narrow
+   desktop window has the same problem. */
+.panel{overflow-x:auto}
+/* Stops a table collapsing into unreadable slivers before it starts to
+   scroll. Below this width the horizontal scroll is the better trade. */
+.panel table,.mb table{min-width:520px}
+.mb{overflow-x:auto}
+/* The line grids carry more columns than anything else and are the one place
+   a user types rather than reads, so they get more room before scrolling. */
+.lines{min-width:600px}
+
+/* Long values must not force the whole layout wide. */
+.att-n,.empty p,.note{overflow-wrap:anywhere}
+
+@media (max-width:1100px){
+  .g3c{grid-template-columns:1fr}
+}
+
+@media (max-width:900px){
+  .g2c,.g3c,.row,.g2{grid-template-columns:1fr}
+
+  /* Off-canvas drawer. `transform` rather than `display` so it animates and
+     so the nav keeps its scroll position between openings. */
+  aside{position:fixed;inset:0 auto 0 0;z-index:60;width:240px;
+    transform:translateX(-100%);transition:transform .22s cubic-bezier(.22,.8,.3,1);
+    box-shadow:var(--sh3)}
+  body.nav-open aside{transform:none}
+  /* Scrim. Sits under the drawer and over everything else; tapping it closes.
+     Pointer-events only when open, or it would swallow every click. */
+  body::after{content:'';position:fixed;inset:0;background:var(--ov);z-index:59;
+    opacity:0;pointer-events:none;transition:opacity .22s}
+  body.nav-open::after{opacity:1;pointer-events:auto}
+  .navbtn{display:flex!important}
+
+  main{width:100%}
+  header{padding:0 12px;gap:10px}
+  header .org{font-size:11.5px;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;min-width:0}
+  .pagehead{padding:14px 12px 0;flex-wrap:wrap;gap:8px}
+  .pagehead h2{font-size:17px}
+  .body{padding:12px 12px 40px}
+
+  /* Full-bleed modals. A centred 840px card inside a 375px viewport with
+     40px of overlay padding left 333px of usable width for a form that needs
+     465 — which is why the invoice grid was clipped. */
+  .ov{padding:0;align-items:stretch}
+  .modal{max-width:100%;border-radius:0;min-height:100%;display:flex;
+    flex-direction:column}
+  .modal .mb{flex:1;overflow-y:auto}
+  /* The footer is the only way out of a full-screen modal, so it stays put. */
+  .modal .mf{position:sticky;bottom:0;flex-wrap:wrap}
+  .modal .mf .btn{flex:1;min-width:120px}
+
+  /* Quick-create was pinned to the header's right edge and ran off screen. */
+  .qc{left:8px;right:8px;top:52px;flex-wrap:wrap;max-height:70vh;overflow:auto}
+  .qc .col{border-right:0;min-width:44%}
+
+  .totbox>div{min-width:0;width:100%}
+  .tools{gap:6px}
+  .tools input,.tools select{min-width:0;flex:1 1 130px}
+  .toast{left:12px;right:12px;bottom:12px;max-width:none}
+}
+
+@media (max-width:560px){
+  .kpis{grid-template-columns:1fr 1fr;gap:8px}
+  .kpi b{font-size:18px}
+  .big{font-size:22px}
+  /* Two actions per row rather than a squashed line of four. */
+  .pagehead>div{display:flex;flex-wrap:wrap;gap:6px;width:100%}
+  .pagehead>div .btn{flex:1 1 auto}
+  .qc .col{min-width:100%}
+  .drop{padding:14px 10px}
+}
+
+/* Coarse pointers need a bigger target than a 12px × glyph. */
+@media (pointer:coarse){
+  .x{font-size:26px;padding:4px 8px}
+  .btn.sm{padding:7px 12px}
+  .top{padding:11px 14px}
+  .sub2 a{padding:9px 14px 9px 40px}
+}
+
+</style>
+</head>
+<body>
+
+<!-- ══ AUTH ══ -->
+<div id="auth" class="auth">
+  <div class="authL">
+    <h2>ACHR ERP —<br>accounting and HR on one ledger.</h2>
+    <p>Double-entry bookkeeping, payroll and people — with every company's data
+       isolated at the database level.</p>
+    <ul>
+      <li><b>✓</b> Debits always equal credits — enforced by the database, not by convention</li>
+      <li><b>✓</b> Posted entries are never deleted; corrections are reversing entries</li>
+      <li><b>✓</b> Row-Level Security: one database, no company can see another</li>
+      <li><b>✓</b> Roles and per-row scopes: an employee sees only their own payslip</li>
+      <li><b>✓</b> 58 countries, ISO-4217 currencies, fixed-precision decimals</li>
+    </ul>
+  </div>
+  <div class="authR"><div class="card">
+    <div class="logo"><svg class="mk lg" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="achrB" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a5b4fc"/><stop offset=".55" stop-color="#4f46e5"/><stop offset="1" stop-color="#312e81"/></linearGradient></defs><rect x="1" y="1" width="30" height="30" rx="8" fill="url(#achrB)"/><path d="M9 22 L16 9 L23 22" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.2 17.6 h7.6" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/></svg><b>ACHR<i>ERP</i></b>
+      <button class="thm js-thm" style="margin-left:auto" onclick="toggleTheme()"
+              title="Switch theme" aria-label="Switch theme">☾</button></div>
+    <div class="tabs">
+      <button id="tabIn" class="on" onclick="authTab('in')">Sign in</button>
+      <button id="tabUp" onclick="authTab('up')">Create organisation</button>
+    </div>
+
+    <form id="fIn" onsubmit="doLogin(event)">
+      <h1>Welcome back</h1><p class="sub">Sign in to your workspace</p>
+      <label class="req">Email</label><input id="email" type="email" required autocomplete="username">
+      <label class="req">Password</label><input id="pass" type="password" required autocomplete="current-password">
+      <label>Server</label><input id="api" value="">
+      <button class="btn w" type="submit" id="loginBtn">Sign in</button>
+      <div id="loginErr" class="err hidden"></div>
+      <div class="hint">Demo — password <code>demo-password-not-for-production</code><br>
+        <code>owner@…</code> everything · <code>accountant@…</code> no payroll ·
+        <code>employee@…</code> own payslip only</div>
+    </form>
+
+    <form id="fUp" class="hidden" onsubmit="doSignup(event)">
+      <h1>Create your organisation</h1>
+      <p class="sub">Your own isolated books — chart of accounts included</p>
+      <label class="req">Company name</label><input id="s_co" required>
+      <div class="g2">
+        <div><label class="req">Country</label><select id="s_country" onchange="onCountry()"></select></div>
+        <div><label class="req">Currency</label><select id="s_cur"></select></div>
+      </div>
+      <label>Time zone</label><select id="s_tz"></select>
+      <label class="req">Your name</label><input id="s_name" required>
+      <label class="req">Work email</label><input id="s_email" type="email" required>
+      <label class="req">Password</label><input id="s_pass" type="password" required minlength="12"
+        autocomplete="new-password">
+      <div class="note">At least 12 characters.</div>
+      <button class="btn w" type="submit" id="upBtn">Create organisation</button>
+      <div id="upErr" class="err hidden"></div>
+    </form>
+  </div></div>
+</div>
+
+<!-- ══ APP ══ -->
+<div id="app" class="hidden">
+  <aside>
+    <div class="brand"><svg class="mk" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="achrA" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a5b4fc"/><stop offset=".55" stop-color="#4f46e5"/><stop offset="1" stop-color="#312e81"/></linearGradient></defs><rect x="1" y="1" width="30" height="30" rx="8" fill="url(#achrA)"/><path d="M9 22 L16 9 L23 22" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.2 17.6 h7.6" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/></svg><span class="tx">ACHR<i>ERP</i></span></div>
+    <nav id="nav"></nav>
+    <div class="who"><b id="whoName">—</b><span id="whoRole" style="color:#79839a"></span><br>
+      <a href="#" onclick="logout();return false">Sign out</a></div>
+  </aside>
+  <main>
+    <header>
+      <button class="navbtn" onclick="toggleNav()" aria-label="Menu">☰</button>
+      <span class="org" id="orgName">—</span>
+      <div class="r"><span style="color:var(--mut);font-size:12px" id="baseCur"></span>
+      <button class="thm js-thm" onclick="toggleTheme()"
+              title="Switch theme" aria-label="Switch theme">☾</button>
+      <button class="plus" onclick="quickCreate(event)" title="Create">+</button></div>
+    </header>
+    <div class="pagehead"><h2 id="pageTitle">Home</h2><div id="pageActions"></div></div>
+    <div class="body" id="view"></div>
+  </main>
+</div>
+<script src="/app/app.js"></script>
+</body>
+</html>

@@ -63,6 +63,14 @@ else
   "$PY" manage.py migrate --noinput
 fi
 
+# The permission catalogue lives in config/permissions.json and is a property
+# of the code, not of the data -- so it is applied by a deploy, every time,
+# rather than remembered. Idempotent, and it validates the whole document
+# before writing: a role naming a codename that does not exist would otherwise
+# look correct in the admin and silently deny in production.
+step "Seeding the permission catalogue"
+"$PY" manage.py seed_permissions
+
 step "Collecting static files"
 "$PY" manage.py collectstatic --noinput >/dev/null
 

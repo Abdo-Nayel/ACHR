@@ -57,6 +57,25 @@ NORMAL_BALANCE: dict[str, str] = {
 }
 
 
+class NormalBalance(models.TextChoices):
+    DEBIT = "debit", "Debit"
+    CREDIT = "credit", "Credit"
+
+
+class IncomeCategory(models.TextChoices):
+    """P&L bucket a postable income/expense account rolls up into, for the
+    income statement. ``NONE`` on every balance-sheet account."""
+
+    NONE = "none", "—"
+    REVENUE = "revenue", "Revenue"
+    DISCOUNT = "discount", "Sales discounts"
+    RETURNS = "returns", "Sales returns"
+    COGS = "cogs", "Cost of goods sold"
+    OPERATING = "operating", "Operating expenses"
+    ADMIN = "admin", "General & administrative"
+    DEPRECIATION_TAX = "depreciation_tax", "Depreciation & tax"
+
+
 class Account(TenantScopedModel):
     """A node in the tenant's chart of accounts.
 
@@ -89,6 +108,31 @@ class Account(TenantScopedModel):
         default=False, help_text="Bank/cash accounts eligible for reconciliation."
     )
 
+    # -- 5-level positional coding (see apps.accounting.services.coding) -----
+    #: Depth in the chart, 1 (a financial-statement section) … 5 (a postable
+    #: account). NULL on legacy free-form accounts that predate the coded chart.
+    level = models.PositiveSmallIntegerField(null=True, blank=True)
+    #: This account's own number within its parent (1, 2, 3 …). The human `code`
+    #: is the formatted `full_code`; this is the raw segment the coder allocates.
+    segment_code = models.PositiveIntegerField(null=True, blank=True)
+    #: Absolute positional code — ancestor segments packed into one integer via
+    #: fixed per-level digit widths, so an account's place in the tree is a
+    #: single sortable/uniquely-indexable number. NULL on legacy accounts.
+    full_code = models.BigIntegerField(null=True, blank=True, db_index=True)
+
+    #: Normal side, overriding the type default for contra accounts (a credit
+    #: accumulated-depreciation under Assets, a debit sales-discount under
+    #: Income). Blank = derive from `type` (see the `normal_balance` property).
+    normal_balance_override = models.CharField(
+        max_length=6, choices=NormalBalance.choices, blank=True
+    )
+    #: P&L bucket for the income statement; NONE on balance-sheet accounts.
+    income_category = models.CharField(
+        max_length=30, choices=IncomeCategory.choices, default=IncomeCategory.NONE
+    )
+    #: Control accounts (customers/suppliers) whose lines must name a party.
+    requires_party = models.BooleanField(default=False)
+
     #: Denormalised running balance, maintained only by the posting service
     #: inside the same transaction as the journal lines. Reports never trust
     #: it for period figures (they aggregate lines); it exists so the
@@ -110,6 +154,19 @@ class Account(TenantScopedModel):
                 condition=~models.Q(parent=models.F("id")),
                 name="ck_account_no_self_parent",
             ),
+            # The positional code is unique per tenant where it is set (coded
+            # accounts); legacy free-form accounts leave it NULL.
+            models.UniqueConstraint(
+                fields=["tenant", "full_code"],
+                condition=models.Q(full_code__isnull=False),
+                name="uq_account_full_code",
+            ),
+            # Two siblings cannot share a segment number under the same parent.
+            models.UniqueConstraint(
+                fields=["tenant", "parent", "segment_code"],
+                condition=models.Q(segment_code__isnull=False),
+                name="uq_account_parent_segment",
+            ),
         ]
         indexes = [
             models.Index(fields=["tenant", "-created_at"]),
@@ -124,7 +181,7 @@ class Account(TenantScopedModel):
 
     @property
     def normal_balance(self) -> str:
-        return NORMAL_BALANCE[self.type]
+        return self.normal_balance_override or NORMAL_BALANCE[self.type]
 
     @property
     def increases_on_debit(self) -> bool:

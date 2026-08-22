@@ -61,19 +61,13 @@ app.autodiscover_tasks()
 # apps.payroll.tasks lands on the payroll queue automatically, and nobody has
 # to remember the `queue=` kwarg.
 app.conf.task_routes = {
-    "apps.payments.tasks.*": {"queue": "payments"},
-    "apps.banking.tasks.*": {"queue": "payments"},
-    "apps.payroll.tasks.*": {"queue": "payroll"},
-    "apps.hr.tasks.accrue_leave*": {"queue": "payroll"},
+    # Only prefixes for task modules that actually exist. A beat entry can still
+    # pin a queue via its own ``options``; this is the default for ad-hoc sends.
+    "apps.hr.tasks.*": {"queue": "payroll"},
+    "apps.inventory.tasks.*": {"queue": "reports"},
     "apps.reporting.tasks.*": {"queue": "reports"},
-    "apps.notifications.tasks.*": {"queue": "notifications"},
-    "apps.sales.tasks.send_payment_reminders": {"queue": "notifications"},
     "*": {"queue": "default"},
 }
-
-app.conf.task_queues_declared = [
-    "default", "payments", "payroll", "reports", "notifications",
-]
 
 # Retry policy for transient broker/gateway failures. Financial tasks set
 # their own `autoretry_for` with a narrower exception list — blanket retrying
@@ -105,14 +99,6 @@ app.conf.beat_schedule = {
         "schedule": crontab(minute=5),  # every hour at :05
         "options": {"queue": "default", "expires": 55 * 60},
     },
-    # Dunning. Once a day, early, so reminders land in the customer's morning.
-    # `expires` matters: if the worker fleet was down for six hours we do NOT
-    # want six days of reminders delivered at once.
-    "send-payment-reminders": {
-        "task": "apps.sales.tasks.send_payment_reminders",
-        "schedule": crontab(hour=6, minute=0),
-        "options": {"queue": "notifications", "expires": 6 * 60 * 60},
-    },
     # Monthly leave accrual on the 1st. Idempotent per (employee, period):
     # LeaveBalance rows carry a unique (tenant, employee, leave_type, period)
     # key, so a re-run credits nothing twice.
@@ -140,22 +126,6 @@ app.conf.beat_schedule = {
         "task": "apps.reporting.tasks.nightly_ledger_integrity_check",
         "schedule": crontab(hour=3, minute=0),
         "options": {"queue": "reports", "expires": 4 * 60 * 60},
-    },
-    # Weekly digest of expiring documents (employee contracts, residency and
-    # work permits, vehicle licences, tax certificates). Monday 07:00 so it is
-    # actionable during the working week.
-    "expire-documents-report": {
-        "task": "apps.hr.tasks.expire_documents_report",
-        "schedule": crontab(day_of_week=1, hour=7, minute=0),
-        "options": {"queue": "notifications", "expires": 24 * 60 * 60},
-    },
-    # Gateway webhooks that failed processing are parked, not dropped. This
-    # replays them with exponential backoff. Safe because every webhook is
-    # deduplicated on the gateway event id.
-    "retry-failed-webhooks": {
-        "task": "apps.payments.tasks.retry_failed_webhooks",
-        "schedule": crontab(minute="*/5"),
-        "options": {"queue": "payments", "expires": 4 * 60},
     },
 }
 

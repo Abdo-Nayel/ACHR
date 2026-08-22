@@ -113,7 +113,12 @@ if config("POSTGRES_REPLICA_HOST", default=""):
         # ATOMIC_REQUESTS on a replica would try to open a write transaction.
         "ATOMIC_REQUESTS": False,
     }
-    DATABASE_ROUTERS = ["apps.reporting.routers.ReadReplicaRouter"]
+    # No automatic router: routing *all* reads to the replica breaks
+    # read-your-writes (a read straight after a write would hit stale replica
+    # data). Heavy report aggregates opt in explicitly with
+    # ``.using("replica")`` instead, which is the only place the lag is
+    # acceptable. (A blanket ``DATABASE_ROUTERS`` here previously named a router
+    # module that did not exist — a boot crash the moment a replica was set.)
 
 
 # ---------------------------------------------------------------------------
@@ -194,14 +199,11 @@ if SENTRY_DSN:
 # ---------------------------------------------------------------------------
 # Operational guards
 # ---------------------------------------------------------------------------
-# Fail the boot rather than serve with isolation disabled. The check queries
-# pg_roles for rolsuper/rolbypassrls on the connecting user and pg_class for
-# relforcerowsecurity on every tenant table.
-STARTUP_CHECKS = [
-    "apps.tenancy.checks.assert_app_role_is_not_superuser",
-    "apps.tenancy.checks.assert_rls_forced_on_all_tenant_tables",
-    "apps.accounting.checks.assert_ledger_triggers_installed",
-]
+# Isolation is asserted by real Django deploy checks now — see
+# apps/tenancy/checks.py and apps/accounting/checks.py, run by
+# ``manage.py check --deploy`` (and ``manage.py check_rls``) in CI and at deploy.
+# The former ``STARTUP_CHECKS`` list here named functions that did not exist and
+# was read by nothing; the check framework replaces it.
 
 ADMINS = [(n, n) for n in config("ADMIN_EMAILS", default="", cast=Csv())]
 SERVER_EMAIL = DEFAULT_FROM_EMAIL

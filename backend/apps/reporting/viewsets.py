@@ -53,7 +53,11 @@ from rest_framework.views import APIView
 from apps.core.pagination import SmallPagePagination
 from apps.core.serializers import ReadOnlyModelSerializer, TenantScopedSerializer
 from apps.core.tenancy_context import get_current_tenant_id
-from apps.core.viewsets import ReadOnlyTenantViewSet, TenantModelViewSet
+from apps.core.viewsets import (
+    RbacOnlyQuerysetMixin,
+    ReadOnlyTenantViewSet,
+    TenantModelViewSet,
+)
 from apps.iam.permissions import HasPermission
 from apps.reporting.generators.base import ReportContext, ReportError, get_generator
 from apps.reporting.models import ReportDefinition, ReportSnapshot
@@ -292,29 +296,6 @@ class ReportRunView(APIView):
 # ---------------------------------------------------------------------------
 # Viewsets
 # ---------------------------------------------------------------------------
-
-class RbacOnlyQuerysetMixin:
-    """Reporting configuration has no ABAC dimension; skip the scope ``Q``.
-
-    Neither ``report_definition`` nor ``report_snapshot`` appears in
-    ``SCOPE_FIELDS``, and ``build_scope_q`` fails closed on anything it cannot
-    narrow. Without this every non-Owner would get an empty list and a 200 —
-    the silent failure mode this codebase works hardest to avoid. Tenancy and
-    row-level security still apply.
-    """
-
-    def get_queryset(self):
-        model = self.queryset.model
-        queryset = model._default_manager.all()
-        if self.select_related:
-            queryset = queryset.select_related(*self.select_related)
-        if self.prefetch_related:
-            queryset = queryset.prefetch_related(*self.prefetch_related)
-        ordering = getattr(self, "ordering", None)
-        if ordering:
-            queryset = queryset.order_by(*ordering)
-        return queryset
-
 
 class ReportDefinitionViewSet(RbacOnlyQuerysetMixin, TenantModelViewSet):
     """Saved report configurations."""

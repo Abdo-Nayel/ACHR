@@ -103,6 +103,24 @@ class GatewayError(DomainError):
     default_detail = "The payment gateway rejected or failed the request."
 
 
+class NotImplementedYet(DomainError):
+    """501 for a route that is mounted but whose implementation is pending.
+
+    Mounted rather than absent on purpose: the OpenAPI schema — and therefore
+    the generated TypeScript client — carries the endpoint, so the frontend can
+    be written against it, and a 501 with a message naming what is missing is
+    an answer. A 404 looks like a routing bug and costs somebody an afternoon.
+
+    It lived in ``apps.accounting.viewsets`` and was imported by five other
+    apps — an edge into the ledger module that had nothing to do with the
+    ledger. It belongs here with the rest of the error vocabulary.
+    """
+
+    status_code = status.HTTP_501_NOT_IMPLEMENTED
+    default_code = "not_implemented"
+    default_detail = "This endpoint is not implemented yet."
+
+
 #: Maps domain exception *class names* from the service layer onto API errors.
 #: Matching by name rather than by import keeps this module free of imports
 #: from every business app, which would create a cycle at startup.

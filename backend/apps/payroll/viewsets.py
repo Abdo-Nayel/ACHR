@@ -9,7 +9,7 @@ tenant_id=..., user_id=...)``. The payroll engine's functions take the
 user)``, ``post_run_to_ledger(run, *, user_id=None)``, ``mark_run_paid(run,
 *, bank_account_system_key=..., user_id=..., payment_date=...)`` — because
 they lock and re-read the row themselves. Writing the handlers by hand and
-routing them through :class:`~apps.accounting.viewsets.IdempotentActionMixin`
+routing them through :class:`~apps.core.viewsets.IdempotentActionMixin`
 keeps the header, the cache namespace and the ``Idempotency-Replayed``
 behaviour identical to a generated transition without pretending the service
 has a signature it does not have.
@@ -42,11 +42,16 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.accounting.serializers import JournalEntrySerializer
-from apps.accounting.viewsets import IdempotentActionMixin, NotImplementedYet
+from apps.core.exceptions import NotImplementedYet
+from apps.core.viewsets import IdempotentActionMixin
 from apps.core.exceptions import DomainError
 from apps.core.pagination import SmallPagePagination
 from apps.core.serializers import TransitionSerializer
-from apps.core.viewsets import ReadOnlyTenantViewSet, TenantModelViewSet
+from apps.core.viewsets import (
+    RbacOnlyQuerysetMixin,
+    ReadOnlyTenantViewSet,
+    TenantModelViewSet,
+)
 from apps.payroll.models import (
     EmployeePayrollProfile,
     PayrollComponent,
@@ -70,30 +75,6 @@ from apps.payroll.serializers import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-class RbacOnlyQuerysetMixin:
-    """Opt a configuration resource out of ABAC narrowing.
-
-    ``component``, ``tax_bracket`` and the per-employee payroll profile are
-    not in ``SCOPE_FIELDS``. ``build_scope_q`` fails closed for anything it
-    cannot narrow, so without this the salary-component catalogue would return
-    an empty list — with a 200 — to every user who is not the tenant Owner.
-    Tenancy and row-level security still apply; only the actor-scope ``Q`` is
-    skipped.
-    """
-
-    def get_queryset(self):
-        model = self.queryset.model
-        queryset = model._default_manager.all()
-        if self.select_related:
-            queryset = queryset.select_related(*self.select_related)
-        if self.prefetch_related:
-            queryset = queryset.prefetch_related(*self.prefetch_related)
-        ordering = getattr(self, "ordering", None)
-        if ordering:
-            queryset = queryset.order_by(*ordering)
-        return queryset
 
 
 class PostRunSerializer(TransitionSerializer):

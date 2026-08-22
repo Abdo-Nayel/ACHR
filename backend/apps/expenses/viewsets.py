@@ -36,7 +36,7 @@ from django.utils import timezone
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from apps.accounting.viewsets import IdempotentActionMixin, NotImplementedYet
+from apps.core.viewsets import IdempotentActionMixin
 from apps.core.exceptions import DomainError
 from apps.core.pagination import SmallPagePagination
 from apps.expenses.services.bill_posting import pay_bill, post_bill
@@ -46,7 +46,11 @@ from apps.core.serializers import (
     ReasonRequiredTransitionSerializer,
     TransitionSerializer,
 )
-from apps.core.viewsets import ReadOnlyTenantViewSet, TenantModelViewSet
+from apps.core.viewsets import (
+    RbacOnlyQuerysetMixin,
+    ReadOnlyTenantViewSet,
+    TenantModelViewSet,
+)
 from apps.expenses.models import (
     Bill,
     BillPayment,
@@ -73,29 +77,6 @@ from apps.expenses.serializers import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-class RbacOnlyQuerysetMixin:
-    """Opt reference data out of ABAC narrowing.
-
-    ``vendor``, ``category``, ``bill_payment`` and ``receipt`` are either
-    absent from ``SCOPE_FIELDS`` or have no owner dimension. ``build_scope_q``
-    fails closed on anything it cannot narrow, so without this the vendor list
-    would be empty — with a 200 — for everyone but the tenant Owner. Tenancy
-    and row-level security still apply; only the actor-scope ``Q`` is skipped.
-    """
-
-    def get_queryset(self):
-        model = self.queryset.model
-        queryset = model._default_manager.all()
-        if self.select_related:
-            queryset = queryset.select_related(*self.select_related)
-        if self.prefetch_related:
-            queryset = queryset.prefetch_related(*self.prefetch_related)
-        ordering = getattr(self, "ordering", None)
-        if ordering:
-            queryset = queryset.order_by(*ordering)
-        return queryset
 
 
 # ---------------------------------------------------------------------------

@@ -51,6 +51,7 @@ class MovementCursorPagination(LedgerCursorPagination):
     ordering = ("-occurred_at", "-created_at", "-id")
 from apps.core.serializers import TransitionSerializer
 from apps.core.viewsets import (
+    RbacOnlyQuerysetMixin,
     ReadOnlyTenantViewSet,
     TenantModelViewSet,
     raise_as_api_error,
@@ -79,37 +80,6 @@ from apps.inventory.serializers import (
     UnitOfMeasureSerializer,
     WarehouseSerializer,
 )
-
-
-class RbacOnlyQuerysetMixin:
-    """Tenant-scoped, RBAC-guarded, but not ABAC-filtered. See module docstring.
-
-    Bypasses :class:`apps.iam.permissions.ScopedQuerysetMixin` by reading the
-    viewset's ``queryset`` directly. The tenant boundary is untouched:
-    ``TenantManager.get_queryset`` still filters to the bound tenant and
-    returns ``.none()`` when no tenant is bound.
-    """
-
-    def get_queryset(self):
-        # ``self.queryset.model._default_manager.all()``, never
-        # ``self.queryset.all()``. The class attribute was evaluated at import
-        # time, with no tenant bound, so ``TenantManager`` failed closed and
-        # froze an empty queryset for the life of the process — ``.all()`` on
-        # ``.none()`` is still nothing. The symptom is the worst kind: HTTP
-        # 200, a well-formed envelope and an empty ``results`` array on every
-        # request, with no error anywhere. Re-deriving from the manager runs it
-        # inside the request, where the tenant actually is bound. This mirrors
-        # ``apps.core.viewsets.TenantViewSetMixin.get_queryset``, which
-        # documents the same trap.
-        queryset = self.queryset.model._default_manager.all()
-        if self.select_related:
-            queryset = queryset.select_related(*self.select_related)
-        if self.prefetch_related:
-            queryset = queryset.prefetch_related(*self.prefetch_related)
-        ordering = getattr(self, "ordering", None)
-        if ordering:
-            queryset = queryset.order_by(*ordering)
-        return queryset
 
 
 class UnitOfMeasureViewSet(RbacOnlyQuerysetMixin, TenantModelViewSet):

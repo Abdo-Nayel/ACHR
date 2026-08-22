@@ -48,7 +48,7 @@ from drf_spectacular.utils import extend_schema
 from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
 
-from apps.accounting.viewsets import NotImplementedYet
+from apps.core.exceptions import NotImplementedYet
 from apps.core.throttling import BurstThrottle
 
 

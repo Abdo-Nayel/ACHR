@@ -38,11 +38,13 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 
-from apps.accounting.viewsets import IdempotentActionMixin, NotImplementedYet
+from apps.core.exceptions import NotImplementedYet
+from apps.core.viewsets import IdempotentActionMixin
 from apps.core.exceptions import DomainError
 from apps.core.fields import ZERO, quantize_currency
 from apps.core.pagination import SmallPagePagination
 from apps.core.viewsets import (
+    RbacOnlyQuerysetMixin,
     ReadOnlyTenantViewSet,
     TenantModelViewSet,
     read_idempotency_key,
@@ -139,30 +141,6 @@ def allocate_document_number(tenant_id: uuid.UUID, scope: str, prefix: str,
 # ---------------------------------------------------------------------------
 # Gateway configuration
 # ---------------------------------------------------------------------------
-
-class RbacOnlyQuerysetMixin:
-    """Skip the ABAC narrowing for rows that have no owner dimension.
-
-    ``gateway_config`` and ``webhook_event`` are not in ``SCOPE_FIELDS``: a
-    gateway configuration is not "owned" by the person who created it, and a
-    provider's event belongs to the tenant rather than to a user. Left to the
-    default, ``build_scope_q`` would fail closed for every non-Owner and the
-    endpoints would return an empty list with a 200 — the failure mode this
-    codebase spends the most effort avoiding.
-    """
-
-    def get_queryset(self):
-        model = self.queryset.model
-        queryset = model._default_manager.all()
-        if self.select_related:
-            queryset = queryset.select_related(*self.select_related)
-        if self.prefetch_related:
-            queryset = queryset.prefetch_related(*self.prefetch_related)
-        ordering = getattr(self, "ordering", None)
-        if ordering:
-            queryset = queryset.order_by(*ordering)
-        return queryset
-
 
 class PaymentGatewayConfigViewSet(RbacOnlyQuerysetMixin, TenantModelViewSet):
     """Configured payment providers. Secrets never leave the server."""

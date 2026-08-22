@@ -28,7 +28,8 @@ from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
-from apps.accounting.viewsets import IdempotentActionMixin, NotImplementedYet
+from apps.core.exceptions import NotImplementedYet
+from apps.core.viewsets import IdempotentActionMixin
 from apps.core.exceptions import DomainError
 from apps.core.fields import ZERO
 from apps.core.pagination import SmallPagePagination

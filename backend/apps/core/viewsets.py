@@ -241,6 +241,20 @@ class ReadOnlyTenantViewSet(TenantViewSetMixin, viewsets.ReadOnlyModelViewSet):
     """
 
 
+class RbacOnlyQuerysetMixin:
+    """Opt a tenant-wide resource out of ABAC scope narrowing.
+
+    For catalogues every member may list — units of measure, tax brackets,
+    salary components, report definitions — that carry no per-actor scope.
+    Tenancy and Row-Level Security still apply; only the actor-scope ``Q`` is
+    skipped (see :attr:`ScopedQuerysetMixin.abac`). Mix it in to the left of the
+    viewset base. This one declaration replaced seven byte-identical copies that
+    each re-implemented ``get_queryset`` to achieve the same thing.
+    """
+
+    abac = False
+
+
 # ---------------------------------------------------------------------------
 # Transitions
 # ---------------------------------------------------------------------------
@@ -495,3 +509,62 @@ def deny_method(message: str):
         raise MethodNotAllowed(request.method, detail=message)
 
     return handler
+
+
+class IdempotentActionMixin:
+    """Run a service call once per ``Idempotency-Key``, replay it thereafter.
+
+    For hand-written ``@action`` transitions whose service does not take the
+    ``(pk, **kwargs)`` shape :func:`transition_action` expects. It reuses the
+    same cache helpers, so a hand-written transition behaves identically to a
+    generated one — same header, same cache namespace, same
+    ``Idempotency-Replayed`` response header.
+
+    This lived in ``apps.accounting.viewsets`` and was imported by five sibling
+    apps; it has nothing to do with the ledger, so it lives here with the rest
+    of the shared viewset behaviour.
+    """
+
+    def run_idempotent(
+        self,
+        request,
+        *,
+        transition: str,
+        run: Callable[[str], Any],
+        serializer_for=None,
+    ) -> Response:
+        body = request.data if isinstance(request.data, dict) else None
+        key = read_idempotency_key(request, body)
+        cache_key: Optional[str] = None
+
+        if key:
+            cache_key = _idempotency_cache_key(
+                getattr(self, "resource", None) or "resource", transition, key
+            )
+            previous = _recall_idempotent_result(cache_key)
+            if previous is not None:
+                existing = self.get_queryset().filter(pk=previous).first()
+                payload = (
+                    (serializer_for or self.get_serializer)(existing).data
+                    if existing is not None
+                    else {"id": str(previous)}
+                )
+                response = Response(payload, status=status.HTTP_200_OK)
+                response["Idempotency-Replayed"] = "true"
+                return response
+
+        try:
+            # Nested inside ATOMIC_REQUESTS, so this is a savepoint: a failed
+            # transition rolls back its own partial work without discarding the
+            # tenant binding held by the outer transaction.
+            with transaction.atomic():
+                result = run(key)
+        except Exception as exc:  # noqa: BLE001 - re-raised as an API error
+            raise_as_api_error(exc)
+            raise  # pragma: no cover - raise_as_api_error never returns
+
+        if cache_key is not None and result is not None:
+            _remember_idempotent_result(cache_key, result.pk)
+
+        serialize = serializer_for or self.get_serializer
+        return Response(serialize(result).data, status=status.HTTP_200_OK)

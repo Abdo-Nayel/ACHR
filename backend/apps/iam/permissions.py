@@ -1018,9 +1018,19 @@ class ScopedQuerysetMixin:
 
     ``scope_resource`` must match ``ScopeRule.resource``. A view that forgets
     it raises at request time rather than serving unscoped rows.
+
+    Set ``abac = False`` on a viewset whose resource is *not* actor-scoped —
+    a tenant-wide configuration catalogue (salary components, tax brackets,
+    units of measure) that every member may list. Tenancy and Row-Level
+    Security still apply; only the per-actor scope ``Q`` is skipped, and
+    ``scope_resource`` is then not required. This replaced seven byte-identical
+    ``RbacOnlyQuerysetMixin`` copies that each re-implemented ``get_queryset``
+    to do exactly this.
     """
 
     scope_resource: Optional[str] = None
+    #: Whether to narrow by the actor's ABAC scope. See the class docstring.
+    abac: bool = True
 
     def get_scope_resource(self) -> str:
         resource = self.scope_resource
@@ -1033,6 +1043,10 @@ class ScopedQuerysetMixin:
 
     def get_queryset(self) -> QuerySet:
         queryset = super().get_queryset()
+        if not self.abac:
+            # RBAC + tenancy + RLS still apply; only the actor-scope narrowing
+            # is skipped, for a resource that is tenant-wide by design.
+            return queryset
         scope_q = build_scope_q(
             self.request.user, self.get_scope_resource(), request=self.request
         )

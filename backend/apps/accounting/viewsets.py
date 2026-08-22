@@ -95,9 +95,25 @@ class AccountViewSet(IdempotentActionMixin, TenantModelViewSet):
     ordering = ("code",)
     extra_permissions = {
         "tree": ["accounting.account.read"],
+        "stats": ["accounting.account.read"],
         "ledger": ["accounting.account.read"],
         "archive": ["accounting.account.archive"],
     }
+
+    # -- stats --------------------------------------------------------------
+
+    @action(detail=False, methods=["get"], url_path="stats")
+    def stats(self, request):
+        """Per-level account counts, for the chart UI's level bar."""
+        from django.db.models import Count
+
+        rows = (
+            self.get_queryset()
+            .values("level")
+            .order_by("level")
+            .annotate(count=Count("id"))
+        )
+        return Response({"levels": {str(r["level"]): r["count"] for r in rows}})
 
     # -- tree ---------------------------------------------------------------
 

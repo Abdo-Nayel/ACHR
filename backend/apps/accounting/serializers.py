@@ -40,6 +40,7 @@ from apps.accounting.models import (
     Journal,
     JournalEntry,
     JournalLine,
+    NormalBalance,
     TaxRate,
 )
 from apps.core.fields import ZERO
@@ -79,7 +80,12 @@ class AccountSerializer(TenantScopedSerializer):
     server_owned_fields = ("cached_balance", "cached_balance_as_of", "is_active")
 
     cached_balance = MoneyField(read_only=True)
+    #: The effective normal side (override, else the type default) — read-only.
     normal_balance = serializers.CharField(read_only=True)
+    #: The chosen side, written on create; blank = derive from the section.
+    normal_balance_override = serializers.ChoiceField(
+        choices=NormalBalance.choices, required=False, allow_blank=True, write_only=True
+    )
     parent_code = serializers.CharField(source="parent.code", read_only=True, default=None)
 
     class Meta:
@@ -87,6 +93,8 @@ class AccountSerializer(TenantScopedSerializer):
         fields = (
             "id",
             "code",
+            "level",
+            "full_code",
             "name",
             "type",
             "parent",
@@ -97,13 +105,56 @@ class AccountSerializer(TenantScopedSerializer):
             "is_active",
             "system_key",
             "is_reconcilable",
+            "requires_party",
+            "income_category",
             "cached_balance",
             "cached_balance_as_of",
             "normal_balance",
+            "normal_balance_override",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("system_key",)
+        # The code is allocated by the server (see create); the section, level
+        # and postability are derived from the account's place in the tree.
+        read_only_fields = (
+            "system_key", "code", "level", "full_code", "type", "is_postable",
+            "income_category",
+        )
+
+    def create(self, validated_data: dict) -> Account:
+        """Create an account with a **server-allocated** segmented code.
+
+        The client names an account under a parent and picks its side; the code,
+        level, full code, section and postability come from its place in the
+        tree (see ``apps.accounting.services.coding.allocate_account``). A caller
+        never invents a number, so two accountants adding accounts at once cannot
+        collide and the chart stays a clean positional tree.
+        """
+        from apps.accounting.services.coding import allocate_account
+
+        tenant_id = self.get_tenant_id()
+        account = allocate_account(
+            tenant_id,
+            parent=validated_data.get("parent"),
+            name=validated_data.get("name", ""),
+            normal_balance=validated_data.get("normal_balance_override", ""),
+            requires_party=validated_data.get("requires_party", False),
+            currency=validated_data.get("currency"),
+            is_reconcilable=validated_data.get("is_reconcilable", False),
+            user_id=self.get_actor_id(),
+        )
+        description = validated_data.get("description")
+        if description:
+            account.description = description
+            account.save(update_fields=["description", "updated_at"])
+        return account
+
+    def update(self, instance: Account, validated_data: dict) -> Account:
+        # A coded account's place in the tree is its identity: re-parenting would
+        # change its full code and orphan every posting that resolved it. Edits
+        # are name/description/currency/side only.
+        validated_data.pop("parent", None)
+        return super().update(instance, validated_data)
 
     def validate_parent(self, parent: Optional[Account]) -> Optional[Account]:
         """Reject a parent that would create a cycle.

@@ -445,6 +445,32 @@
                 }
             }
         },
+        "/api/v1/accounts/stats/": {
+            "get": {
+                "operationId": "accounts_stats_retrieve",
+                "description": "Per-level account counts, for the chart UI's level bar.",
+                "tags": [
+                    "accounts"
+                ],
+                "security": [
+                    {
+                        "jwtAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Account"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
         "/api/v1/accounts/tree/": {
             "get": {
                 "operationId": "accounts_tree_retrieve",
@@ -27361,14 +27387,29 @@
                     },
                     "code": {
                         "type": "string",
-                        "maxLength": 20
+                        "readOnly": true
+                    },
+                    "level": {
+                        "type": "integer",
+                        "readOnly": true,
+                        "nullable": true
+                    },
+                    "full_code": {
+                        "type": "integer",
+                        "readOnly": true,
+                        "nullable": true
                     },
                     "name": {
                         "type": "string",
                         "maxLength": 150
                     },
                     "type": {
-                        "$ref": "#/components/schemas/AccountTypeEnum"
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/AccountTypeEnum"
+                            }
+                        ],
+                        "readOnly": true
                     },
                     "parent": {
                         "type": "string",
@@ -27398,7 +27439,8 @@
                         ]
                     },
                     "is_postable": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "readOnly": true
                     },
                     "is_active": {
                         "type": "boolean",
@@ -27411,6 +27453,17 @@
                     "is_reconcilable": {
                         "type": "boolean",
                         "description": "Bank/cash accounts eligible for reconciliation."
+                    },
+                    "requires_party": {
+                        "type": "boolean"
+                    },
+                    "income_category": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/IncomeCategoryEnum"
+                            }
+                        ],
+                        "readOnly": true
                     },
                     "cached_balance": {
                         "type": "string",
@@ -27444,8 +27497,12 @@
                     "cached_balance_as_of",
                     "code",
                     "created_at",
+                    "full_code",
                     "id",
+                    "income_category",
                     "is_active",
+                    "is_postable",
+                    "level",
                     "name",
                     "normal_balance",
                     "parent_code",
@@ -27458,18 +27515,10 @@
                 "type": "object",
                 "description": "One node of the chart of accounts.\n\n``cached_balance`` is exposed but never accepted. It is a denormalisation\nmaintained by the posting service inside the same transaction as the\njournal lines; a client that could write it could make the dashboard\ndisagree with the ledger with a single PATCH, and nothing would ever\nreconcile the two.\n\n``is_active`` is likewise read-only: deactivating an account is\n``POST /accounts/{id}/archive``, which refuses to archive an account that\nstill carries a balance. A writable boolean would skip that check.",
                 "properties": {
-                    "code": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 20
-                    },
                     "name": {
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 150
-                    },
-                    "type": {
-                        "$ref": "#/components/schemas/AccountTypeEnum"
                     },
                     "parent": {
                         "type": "string",
@@ -27494,18 +27543,27 @@
                             }
                         ]
                     },
-                    "is_postable": {
-                        "type": "boolean"
-                    },
                     "is_reconcilable": {
                         "type": "boolean",
                         "description": "Bank/cash accounts eligible for reconciliation."
+                    },
+                    "requires_party": {
+                        "type": "boolean"
+                    },
+                    "normal_balance_override": {
+                        "writeOnly": true,
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/NormalBalanceOverrideEnum"
+                            },
+                            {
+                                "$ref": "#/components/schemas/BlankEnum"
+                            }
+                        ]
                     }
                 },
                 "required": [
-                    "code",
-                    "name",
-                    "type"
+                    "name"
                 ]
             },
             "AccountTypeEnum": {
@@ -31317,6 +31375,20 @@
                 "type": "string",
                 "description": "* `csv` - CSV\n* `ofx` - OFX / QFX\n* `mt940` - SWIFT MT940\n* `camt053` - ISO 20022 CAMT.053\n* `api` - Bank API feed\n* `manual` - Manual entry"
             },
+            "IncomeCategoryEnum": {
+                "enum": [
+                    "none",
+                    "revenue",
+                    "discount",
+                    "returns",
+                    "cogs",
+                    "operating",
+                    "admin",
+                    "depreciation_tax"
+                ],
+                "type": "string",
+                "description": "* `none` - —\n* `revenue` - Revenue\n* `discount` - Sales discounts\n* `returns` - Sales returns\n* `cogs` - Cost of goods sold\n* `operating` - Operating expenses\n* `admin` - General & administrative\n* `depreciation_tax` - Depreciation & tax"
+            },
             "Invitation": {
                 "type": "object",
                 "description": "A pending offer, as the team screen shows it.\n\n``token_hash`` is not in ``fields`` and must never be: it is the verifier\nfor a credential, and an administrator who can read it can accept the\ninvitation themselves under someone else's address.",
@@ -33588,6 +33660,14 @@
                 ],
                 "type": "string",
                 "description": "* `purchase` - Purchase receipt\n* `sale` - Sale / delivery\n* `return_in` - Customer return\n* `return_out` - Return to vendor\n* `adjustment` - Stock adjustment\n* `transfer_in` - Transfer in\n* `transfer_out` - Transfer out\n* `production` - Production\n* `opening` - Opening balance"
+            },
+            "NormalBalanceOverrideEnum": {
+                "enum": [
+                    "debit",
+                    "credit"
+                ],
+                "type": "string",
+                "description": "* `debit` - Debit\n* `credit` - Credit"
             },
             "NullEnum": {
                 "enum": [
@@ -36090,18 +36170,10 @@
                 "type": "object",
                 "description": "One node of the chart of accounts.\n\n``cached_balance`` is exposed but never accepted. It is a denormalisation\nmaintained by the posting service inside the same transaction as the\njournal lines; a client that could write it could make the dashboard\ndisagree with the ledger with a single PATCH, and nothing would ever\nreconcile the two.\n\n``is_active`` is likewise read-only: deactivating an account is\n``POST /accounts/{id}/archive``, which refuses to archive an account that\nstill carries a balance. A writable boolean would skip that check.",
                 "properties": {
-                    "code": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 20
-                    },
                     "name": {
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 150
-                    },
-                    "type": {
-                        "$ref": "#/components/schemas/AccountTypeEnum"
                     },
                     "parent": {
                         "type": "string",
@@ -36126,12 +36198,23 @@
                             }
                         ]
                     },
-                    "is_postable": {
-                        "type": "boolean"
-                    },
                     "is_reconcilable": {
                         "type": "boolean",
                         "description": "Bank/cash accounts eligible for reconciliation."
+                    },
+                    "requires_party": {
+                        "type": "boolean"
+                    },
+                    "normal_balance_override": {
+                        "writeOnly": true,
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/NormalBalanceOverrideEnum"
+                            },
+                            {
+                                "$ref": "#/components/schemas/BlankEnum"
+                            }
+                        ]
                     }
                 }
             },

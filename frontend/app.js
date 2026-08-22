@@ -248,20 +248,22 @@ const MENU=[
  {ic:'🏦',l:'Banking',ch:[['banking','Overview'],['banksetup','Bank Setup'],
    ['banktx','Transactions']]},
  {ic:'👤',l:'Accountant',ch:[['journal','Manual Journals'],['accounts','Chart of Accounts'],
-   ['taxrates','Tax Rates'],['periods','Fiscal Periods']]},
+   ['taxrates','Tax Rates'],['periods','Fiscal Periods'],
+   ['::Reports','Reports'],
+   ['reports','Financial Statements'],['trialbalance','Trial Balance'],
+   ['journalregister','Journal Register'],['partystmt','Party Statement'],
+   ['ratios','Financial Ratios']]},
  {ic:'👥',l:'Payroll & HR',ch:[['employees','Employees'],['departments','Departments'],
    ['shifts','Shifts'],['shiftassign','Shift Assignments'],
    ['leavetypes','Leave Types'],['leaves','Leave Requests'],
    ['overtime','Overtime'],['ottypes','Overtime Types'],
    ['structures','Salary Structures'],['structureassign','Structure Assignments'],
    ['payroll','Pay Runs'],['payslips','Payslips']]},
- {ic:'▥',l:'Reports',ch:[['reports','Financial Statements'],
-   ['gl','General Ledger'],['journalregister','Journal Register'],
-   ['partystmt','Party Statement'],['ratios','Financial Ratios']]},
  {ic:'⚙',l:'Settings',ch:[['org','Organisation'],['branding','Document Branding'],
    ['team','Users & Roles'],['invites','Invitations'],['audit','Audit Log']]},
 ];
-const FLAT=()=>MENU.flatMap(m=>m.ch?m.ch:[[m.k,m.l]]);
+// `::`-prefixed children are section headers inside a group, not routes.
+const FLAT=()=>MENU.flatMap(m=>m.ch?m.ch:[[m.k,m.l]]).filter(([k])=>!k.startsWith('::'));
 
 async function boot(){
   document.getElementById('auth').classList.add('hidden');
@@ -290,7 +292,9 @@ async function boot(){
     return `<div class="top" data-g="${i}" onclick="tog(${i})">
         <span class="ic">${m.ic}</span><span class="tx">${m.l}</span><span class="cv">▶</span></div>
       <div class="sub2" id="sub${i}">${m.ch.map(([k,l])=>
-        `<a href="#" data-p="${k}" onclick="go('${k}');return false">${l}</a>`).join('')}</div>`;
+        k.startsWith('::')
+          ? `<div class="sub2-head">${l}</div>`
+          : `<a href="#" data-p="${k}" onclick="go('${k}');return false">${l}</a>`).join('')}</div>`;
   }).join('');
   // Land where the URL says, not always on the dashboard. `replace` because
   // the hash is already correct — rewriting it would push a duplicate entry.
@@ -2798,7 +2802,7 @@ VIEWS.reports=async()=>{const y=new Date().getFullYear();
       <input id="r_from" type="date" value="${y}-01-01">
       <label style="margin:0">To</label>
       <input id="r_to" type="date" value="${new Date().toISOString().slice(0,10)}">
-      ${[['trial-balance','Trial Balance'],['profit-loss','Profit &amp; Loss'],
+      ${[['profit-loss','Profit &amp; Loss'],
          ['balance-sheet','Balance Sheet'],['cash-flow','Cash Flow'],
          ['ar-aging','A/R Ageing'],['ap-aging','A/P Ageing']].map((r,i)=>
         `<button class="btn${i?' sec':''}" onclick="run('${r[0]}','${r[1]}')">${r[1]}</button>`).join('')}
@@ -3194,8 +3198,10 @@ async function saveJournal() {
    stack. `#print-root` is the only thing @media print keeps.               */
 
 function drillAccount(id, label) {
-  const f = (document.getElementById('r_from') || {}).value || '';
-  const t = (document.getElementById('r_to') || {}).value || '';
+  // Read the range from whichever report bar is on screen — the Financial
+  // Statements screen uses r_from/r_to, the Trial Balance uses gr_from/gr_to.
+  const f = (document.getElementById('r_from') || document.getElementById('gr_from') || {}).value || '';
+  const t = (document.getElementById('r_to') || document.getElementById('gr_to') || {}).value || '';
   modal(`Ledger — ${label}`, '<div class="sk"></div><div class="sk"></div>', 'Close', closeModal);
   (async () => {
     try {
@@ -3307,36 +3313,50 @@ function grTotals(d, c) {
 
 const grAmt = (v, c) => Number(v) ? money(v, c) : '';
 
-/* ── General Ledger ─ per-account: opening → movements → closing balance.
-   The account picker defaults to the whole chart; choosing one account scopes
-   the report to that account and its descendants (the endpoint's `account`). */
-VIEWS.gl = async () => {
-  V(skeleton());
-  let accs = [];
-  try { accs = (await flattenAccounts()).filter(a => a.is_postable && a.is_active !== false); }
-  catch (e) { return V(errPanel(e.message)); }
-  V(`<div class="tools anim">
-     <label style="margin:0">Account</label>
-     <select id="gr_acct" style="min-width:260px"><option value="">All accounts</option>
-       ${accs.map(a => `<option value="${a.id}">${esc(a.code)} — ${esc(a.name)}</option>`).join('')}
-     </select>
-     ${grDateInputs()}
-     <button class="btn" onclick="grGeneralLedger()">Run</button></div>
+/* ── Trial Balance ─ every account's debit and credit for the period, in a
+   grid that must balance. Each account row drills into its own ledger, so the
+   general-ledger detail is one click away. Driven by /reporting/trial-balance/. */
+VIEWS.trialbalance = () => {
+  V(`<div class="tools anim">${grDateInputs()}
+     <button class="btn" onclick="grTrialBalance()">Run</button></div>
      <div id="gr_out">${grEmpty()}</div>`);
 };
-function grGeneralLedger() {
-  const acc = grVal('gr_acct');
-  grReport('general-ledger', 'General Ledger', (d, c) =>
-    (d.sections || []).length
-      ? grTxn([
-          { h: 'Date', cell: l => l.meta && l.meta.kind === 'movement' ? dt(l.meta.date) : '' },
-          { h: 'Ref', cell: l => esc((l.meta && l.meta.number) || '') },
-          { h: 'Description', cell: l => esc(l.label) },
-          { h: 'Debit', num: 1, cell: l => grAmt(l.debit, c) },
-          { h: 'Credit', num: 1, cell: l => grAmt(l.credit, c) },
-          { h: 'Balance', num: 1, cell: l => money(l.amount, c) },
-        ], d.sections, c) + grTotals(d, c)
-      : grNoData(), acc ? `&account=${acc}` : '');
+function grTrialBalance() {
+  grReport('trial-balance', 'Trial Balance', (d, c) => {
+    const lines = (d.sections && d.sections[0] && d.sections[0].lines) || [];
+    if (!lines.length) return grNoData();
+    const T = d.totals || {};
+    let h = `<div class="rscroll"><table class="grid"><thead><tr>
+      <th style="width:15%">Code</th><th>Account</th>
+      <th class="num" style="width:19%">Debit</th>
+      <th class="num" style="width:19%">Credit</th></tr></thead><tbody>`;
+    lines.forEach(l => {
+      // The label is "code — name"; the name itself may contain " — ", so strip
+      // only the leading "code — " (everything up to the first dash).
+      const name = String(l.label || '').replace(/^[^—]*—\s*/, '');
+      const id = l.account_id;
+      const nameCell = id
+        ? `<a href="#" data-acc="${id}"
+             onclick="drillAccount(this.dataset.acc,this.textContent.trim());return false"
+             title="Open account ledger">${esc(name)}</a>`
+        : esc(name);
+      h += `<tr><td class="mono">${esc(l.account_code || '')}</td><td>${nameCell}</td>
+        <td class="num">${grAmt(l.debit, c)}</td>
+        <td class="num">${grAmt(l.credit, c)}</td></tr>`;
+    });
+    h += `<tr class="gtot"><td></td><td><b>Total</b></td>
+      <td class="num"><b>${money(T.total_debit, c)}</b></td>
+      <td class="num"><b>${money(T.total_credit, c)}</b></td></tr>
+      </tbody></table></div>`;
+    const balanced = T.difference == null || Number(T.difference) === 0;
+    h += `<div style="padding:11px 16px;border-top:1px solid var(--line);
+      background:var(--panel-2);font-size:12.5px">` +
+      (balanced
+        ? `<span style="color:var(--ok)">✓ In balance — debits equal credits</span>`
+        : `<span style="color:var(--dang)">Out of balance by ${money(T.difference, c)}</span>`) +
+      `</div>`;
+    return h;
+  });
 }
 
 /* ── Journal Register ─ every posting in book order. */

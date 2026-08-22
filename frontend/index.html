@@ -4,6 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ACHR ERP — Accounting &amp; HR</title>
+<script>
+  /* Runs before the body paints: if a session is stored, mark <html> so CSS
+     hides the login card and shows the app shell immediately — no one-frame
+     flash of the sign-in screen on reload or a deep-linked clean URL. The
+     token / accept-invite guard mirrors the app's own precedence so an
+     invitation link still shows its accept form rather than a hidden #auth. */
+  try {
+    var _tok = /[?&]token=/.test(location.search),
+        _inv = location.pathname.indexOf('accept-invite') > -1;
+    if (sessionStorage.getItem('achr') && !_tok && !_inv)
+      document.documentElement.classList.add('has-session');
+  } catch (e) {}
+</script>
 <style>
 /* ── design tokens ──────────────────────────────────────────────────────
    Every colour in this file is a token. Nothing below this block hard-codes
@@ -95,6 +108,12 @@ body{margin:0;background:var(--bg);color:var(--fg);
 button{font-family:inherit;cursor:pointer}
 input,select,textarea{font-family:inherit;font-size:14px}
 .hidden{display:none!important}
+/* No first-paint flash of the login card for a returning session: an inline
+   <head> script (below) stamps `has-session` on <html> before the body paints,
+   so the auth screen never shows for the frame it takes the bottom-of-body
+   app.js to run its session-restore. */
+html.has-session #auth{display:none!important}
+html.has-session #app{display:flex!important}
 a{color:var(--acc);text-decoration:none}
 ::selection{background:var(--acc-l);color:var(--acc-d)}
 
@@ -196,7 +215,9 @@ nav::-webkit-scrollbar-thumb{background:var(--side-hi);border-radius:3px}
 .top .cv{margin-left:auto;font-size:8px;opacity:.55;transition:transform .18s}
 .top.open .cv{transform:rotate(90deg)}
 .sub2{max-height:0;overflow:hidden;background:var(--side-deep);transition:max-height .22s ease}
-.sub2.open{max-height:340px}
+.sub2.open{max-height:560px}
+.sub2-head{padding:10px 14px 4px 22px;color:var(--mut);font-size:9px;font-weight:800;
+  letter-spacing:.11em;text-transform:uppercase;border-top:1px solid var(--side-hi);margin-top:5px}
 .sub2 a{display:block;padding:6px 14px 6px 40px;color:var(--side-fg);font-size:12.5px;
   border-left:3px solid transparent;transition:.13s}
 .sub2 a:hover{background:var(--side-hi);color:var(--side-brand)}
@@ -370,6 +391,18 @@ tbody tr:hover{background:var(--panel-2)}
    scrolls, so a long trial balance keeps its column labels in view. */
 .rscroll{max-height:62vh;overflow:auto;border-radius:var(--r)}
 .rscroll thead th{position:sticky;top:0;z-index:2}
+/* Trial-balance style grid: thin gridlines on every cell, right-aligned
+   amounts, a ruled total row. */
+.grid{width:100%;border-collapse:collapse;font-size:13px}
+.grid th,.grid td{border:1px solid var(--line-soft);padding:8px 12px}
+.grid tr:last-child td{border-bottom:1px solid var(--line-soft)}
+.grid thead th{background:var(--panel-2);border-color:var(--line);color:var(--mut);
+  font-size:10.5px;letter-spacing:.06em;font-weight:650;text-transform:uppercase}
+.grid td.num,.grid th.num{text-align:right;font-variant-numeric:tabular-nums}
+.grid tbody tr:hover{background:var(--panel-2)}
+.grid .gtot td{border-top:2px solid var(--line);background:var(--panel-3)}
+.grid a{color:var(--acc);text-decoration:none}
+.grid a:hover{text-decoration:underline}
 
 /* ── attachments ── */
 .drop{border:1.5px dashed var(--field-line);border-radius:var(--r);padding:18px;

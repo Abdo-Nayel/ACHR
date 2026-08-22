@@ -221,6 +221,16 @@ def build_report_context(request, **overrides: Any) -> ReportContext:
     if grouping_code:
         options = {**options, "grouping_code": grouping_code}
 
+    # Fold report-specific scalar scopes into ``options`` so a caller can pass
+    # them as plain query params (``?account=…``, ``?partner_id=…``) rather
+    # than having to nest a JSON ``options`` object on a GET. The generators
+    # that use them (general ledger, party statement) read them from
+    # ``context.options``; a generator that does not simply ignores them.
+    for key in ("account", "partner_type", "partner_id"):
+        value = params.get(key)
+        if value:
+            options = {**options, key: value}
+
     kwargs: dict[str, Any] = {
         "tenant_id": tenant_id,
         "date_from": _date(params, "date_from"),

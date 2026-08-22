@@ -16,7 +16,7 @@ same reason, so the registry is also complete after a bare ``django.setup()``.
 
 from __future__ import annotations
 
-from apps.reporting.generators import financial, operational  # noqa: F401
+from apps.reporting.generators import financial, gl, operational  # noqa: F401
 from apps.reporting.generators.base import (  # noqa: F401
     ReportContext,
     ReportError,
@@ -44,5 +44,6 @@ __all__ = [
     "register_report",
     "registered_reports",
     "financial",
+    "gl",
     "operational",
 ]

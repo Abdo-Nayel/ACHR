@@ -165,29 +165,75 @@ service (`apps/accounting/services/periods.py`).
 
 ---
 
-## 6. The four core reports
+## 6. The reports
 
-Live endpoints under `/reporting/*`, each behind a shared date filter:
+Live endpoints under `/reporting/*`, each behind a shared date filter. The
+first block is the statutory statements; the second is the general-ledger
+*detail* reports ported from the reference GL, plus the derived ratios.
 
 | Report | Endpoint | Filter |
 |---|---|---|
 | Trial balance | `GET /reporting/trial-balance/` | `date_from`, `date_to` |
 | Income statement | `GET /reporting/profit-loss/` | `date_from`, `date_to` |
 | Balance sheet | `GET /reporting/balance-sheet/` | `as_of` |
-| General ledger | `GET /accounts/{id}/ledger/` | per-account movement + running balance |
+| Account ledger | `GET /accounts/{id}/ledger/` | per-account movement + running balance |
+| **General ledger** | `GET /reporting/general-ledger/` | `date_from`, `date_to`, optional `account` (id → that subtree) |
+| **Journal register** | `GET /reporting/journal-register/` | `date_from`, `date_to` |
+| **Financial ratios** | `GET /reporting/financial-ratios/` | `date_from`, `date_to` (balances drawn as at `date_to`) |
+| **Party statement** | `GET /reporting/party-statement/` | `date_from`, `date_to`, `partner_type`, `partner_id` |
+
+The four new reports (`apps/reporting/generators/gl.py`) share the framework
+in `financial.py` — the same `ledger_query`, the same base-currency
+`base_debit`/`base_credit`, the same `ReportResult` shape — so they tie, line
+for line, to the trial balance:
+
+- **General ledger** — one section per account, each opened with its
+  brought-forward balance, a line per posting carrying a **running balance**
+  (`net_balance`, signed to the account's normal side, exactly as
+  `/accounts/{id}/ledger/`), and closed with the carried-forward balance.
+  `?account=<id>` scopes it to that account *and its descendants* (via
+  `_subtree_ids`), so a roll-up shows the aggregate ledger beneath it.
+- **Journal register** — the book of original entry: every posted line in the
+  period ordered `(entry_date, number, line)`, oldest first, with grand debit
+  and credit that are equal by construction.
+- **Financial ratios** — liquidity (current, quick), solvency (debt, debt-to-
+  equity, equity), profitability (gross / operating / net margin, ROA, ROE)
+  and efficiency (asset turnover), each with its formula, plus a *Figures*
+  section of the inputs. Balance-sheet inputs come from
+  `services.kpis.compute_kpis` (the dashboard's own classifier, so a ratio and
+  the home-screen working-capital figure cannot disagree about "current");
+  P&L inputs are split by `income_category` over the period. A ratio whose
+  denominator is zero prints **n/a**, never a fabricated `0`.
+- **Party statement** — one customer's or supplier's *control-account* ledger
+  with a debit-positive running balance (charges raise it, settlements lower
+  it). Restricted to the AR/AP control accounts the aging report ages, because
+  ACHR stamps the party onto every line of a sales entry; without the
+  restriction a statement would net to zero.
+
+Permissions reuse the existing codenames — general ledger and journal register
+ride `reporting.trial_balance.read` (the detail behind the totals), financial
+ratios `reporting.balance_sheet.read` (like the KPIs), party statement
+`reporting.aging.read` (the partner sub-ledger). `GET` runs a report; `POST`
+files it as an immutable `ReportSnapshot`.
 
 The filter parameters are required — a bare GET returns `400`. Responses carry
-`report_type`, `currency`, `generated_at`, `row_count` and `totals` (the trial balance's
-`totals.difference` is `0` when balanced).
+`report_type`, `currency`, `generated_at`, `row_count` and `totals` (the trial
+balance's `totals.difference` is `0` when balanced).
 
 ---
 
 ## 7. The frontend
 
-Rebuilt in the existing vanilla-JS hash-router SPA (`frontend/app.js` + the CSS tokens in
+Rebuilt in the existing vanilla-JS SPA (`frontend/app.js` + the CSS tokens in
 `frontend/index.html`), using ACHR's own patterns (`api` / `go` / `V` / `simple` /
 `openForm`, the `VIEWS` registry) and design tokens only (indigo `--acc`, `--panel*`,
 `--ok`/`--warn`/`--dang`, `--r`, `--sh*`, Inter) — **English / LTR, light + dark**.
+
+Routing is History-API with **clean, hash-free paths** (`/journal`, `/gl`, `/reports`)
+served from the site root: a Django catch-all returns `index.html` for every non-API path
+and the SPA renders it from `location.pathname`. (It replaced the old `/app/#/…` hash
+routing, which read as unprofessional and only existed because the app used to be served
+at a single `/app/` route.)
 
 - **Chart of accounts** — a hierarchical tree from `/accounts/tree/`: `L{level}` badges,
   dotted codes, dr/cr tags on leaves, expand/collapse and search; an add-account modal
@@ -195,9 +241,17 @@ Rebuilt in the existing vanilla-JS hash-router SPA (`frontend/app.js` + the CSS 
   coding; rename and archive via `act()` (confirm + reauth); a per-level stats bar.
 - **Manual journal** — a debit/credit line grid (account · party · currency · rate ·
   debit · credit) with a live balance indicator that gates *Post*; draft → post → reverse
-  through the `journal-entries` API (post supplies the `X-Reauth-Token`).
-- **Reports** — Trial balance, Income statement, Balance sheet and per-account General
-  ledger over the endpoints above, behind a shared date bar.
+  through the `journal-entries` API (post supplies the `X-Reauth-Token`). The **party
+  picker is usable on every line** (a party can be attached to a revenue or expense line,
+  which is what the party statement and ageing read); a control account (A/R, A/P) with no
+  party is flagged, not blocked — `requires_party` is guidance, not a server gate.
+- **Reports** — the *Reports* sidebar group. **Financial Statements** keeps the classic
+  screen (trial balance, P&L, balance sheet, cash flow, A/R & A/P ageing over a shared date
+  bar, with drill-through to a per-account ledger). Alongside it, four dedicated GL screens,
+  each its own sidebar entry and each reading one `/reporting/*` endpoint: **General
+  Ledger** (account picker → per-account opening/movements/closing), **Journal Register**,
+  **Party Statement** (customer/vendor picker) and **Financial Ratios** (grouped indicators
+  + the figures behind them). Shared transactional/ratio renderers, ACHR theme.
 
 ---
 
@@ -205,7 +259,7 @@ Rebuilt in the existing vanilla-JS hash-router SPA (`frontend/app.js` + the CSS 
 
 | Check | Result |
 |---|---|
-| Test suite | **349 passed** (327 baseline + 13 coding + 3 chart + 6 add-account) |
+| Test suite | **362 passed** (349 prior GL-refactor suite + 10 GL-report + 3 report-definition) |
 | Core invariants | 29/29 as the non-owner `erp_app` role |
 | Demo seed | `seed_demo_tenant` posts invoice / payment / expense / payroll on the new chart |
 | End-to-end | seed → browse the English tree → add an account (code allocated) → post a balanced manual journal → the entry appears in trial balance, general ledger, balance sheet and income statement, in ACHR's theme |
@@ -225,6 +279,9 @@ Rebuilt in the existing vanilla-JS hash-router SPA (`frontend/app.js` + the CSS 
 | Chart seed command | `apps/accounting/management/commands/seed_chart_of_accounts.py` |
 | Account model + enums | `apps/accounting/models.py` |
 | Account serializer / viewset | `apps/accounting/serializers.py`, `apps/accounting/viewsets.py` |
-| Reports | `apps/reporting/` + `/reporting/*` |
+| Statutory statements | `apps/reporting/generators/financial.py` |
+| GL detail reports + ratios | `apps/reporting/generators/gl.py` |
+| Report endpoints | `apps/reporting/urls_extra.py` + `/reporting/*` |
+| Report tests | `backend/tests/test_gl_reports.py` |
 | Frontend screens | `frontend/app.js`, `frontend/index.html` |
 | Phase log | `backend/plans/gl-refactor.md` |

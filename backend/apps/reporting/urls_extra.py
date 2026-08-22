@@ -120,6 +120,56 @@ class TaxSummaryView(ReportRunView):
     required_permissions = {"*": ["reporting.tax_summary.read"]}
 
 
+class GeneralLedgerView(ReportRunView):
+    """Every account's movements over a period, with a running balance.
+
+    The detail behind the trial balance, so it is guarded by the same
+    ``trial_balance.read``: anyone trusted to see the totals is trusted to see
+    the postings they are made of, and a separate codename would only be a
+    switch left un-granted. Optional ``account`` (an id) scopes it to one
+    account and its descendants.
+    """
+
+    report_type = ReportType.GENERAL_LEDGER
+    required_permissions = {"*": ["reporting.trial_balance.read"]}
+
+
+class JournalRegisterView(ReportRunView):
+    """Every posted journal line in the period, in book order.
+
+    The book of original entry — the same audience and the same
+    ``trial_balance.read`` as the general ledger it reorders.
+    """
+
+    report_type = ReportType.JOURNAL_REGISTER
+    required_permissions = {"*": ["reporting.trial_balance.read"]}
+
+
+class FinancialRatiosView(ReportRunView):
+    """Liquidity, solvency, profitability and efficiency ratios.
+
+    Guarded by ``balance_sheet.read`` rather than ``profit_loss.read``, exactly
+    like the dashboard KPIs it shares a classifier with: the ratios expose the
+    company's solvency (debt-to-equity, current ratio), which a role holding
+    only ``profit_loss.read`` is deliberately not shown.
+    """
+
+    report_type = ReportType.FINANCIAL_RATIOS
+    required_permissions = {"*": ["reporting.balance_sheet.read"]}
+
+
+class PartyStatementView(ReportRunView):
+    """One customer's or supplier's ledger over a period.
+
+    Partner-level sub-ledger detail, so it rides the same ``aging.read`` that
+    already governs who may see a named partner's balances — the party
+    statement and the aging worklist must not disagree about that.
+    """
+
+    report_type = ReportType.PARTY_STATEMENT
+    required_permissions = {"*": ["reporting.aging.read"]}
+
+
 class PayrollRegisterView(ReportRunView):
     """Per-employee gross, deductions and net, scoped to what the caller may see.
 
@@ -258,6 +308,10 @@ urlpatterns = [
     path("ar-aging/", ARAgingView.as_view(), name="ar-aging"),
     path("ap-aging/", APAgingView.as_view(), name="ap-aging"),
     path("tax-summary/", TaxSummaryView.as_view(), name="tax-summary"),
+    path("general-ledger/", GeneralLedgerView.as_view(), name="general-ledger"),
+    path("journal-register/", JournalRegisterView.as_view(), name="journal-register"),
+    path("financial-ratios/", FinancialRatiosView.as_view(), name="financial-ratios"),
+    path("party-statement/", PartyStatementView.as_view(), name="party-statement"),
     path("payroll-register/", PayrollRegisterView.as_view(), name="payroll-register"),
     path("available/", AvailableReportsView.as_view(), name="available"),
     path("kpis/", KpiView.as_view(), name="kpis"),

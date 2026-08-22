@@ -156,9 +156,9 @@ def invite_url(invitation: Invitation, token: str, *, request=None) -> str:
     """
     base = (getattr(settings, "FRONTEND_BASE_URL", "") or "").rstrip("/")
     if not base and request is not None:
-        base = request.build_absolute_uri("/app").rstrip("/")
-    if not base:
-        base = "/app"
+        # The SPA is served at the site root (clean, hash-free paths), so the
+        # accept-invite deep link is `/accept-invite`, not `/app/accept-invite`.
+        base = request.build_absolute_uri("/").rstrip("/")
     return f"{base}/accept-invite?token={token}"
 
 

@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.conf.urls.static import static
-from django.urls import include, path
+from django.urls import include, path, re_path
 from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularRedocView,
@@ -121,15 +121,25 @@ urlpatterns = [
     path("readyz", ReadinessView.as_view(), name="readyz"),
     path("version", VersionView.as_view(), name="version"),
 
-    # The web UI, same-origin with the API so no CORS is involved.
-    path("app/", frontend_app, name="frontend"),
-    path("app/<str:asset>", frontend_app, name="frontend-asset"),
-    # Invitation links land here; the client reads ?token= and shows the
-    # accept form. Served by the same view so the deep link needs no routing.
-    path("app/accept-invite", frontend_app, name="frontend-accept"),
+    # The browsable API index, under /api/ so the site root can serve the app.
+    path("api/", ApiRootView.as_view(), name="api-root"),
 
-    # Index. Last in the list so it can never shadow a real route.
-    path("", ApiRootView.as_view(), name="api-root"),
+    # The web UI — served at the site *root* with clean, hash-free paths
+    # (`/journal`, `/reports`, `/accept-invite`, …). The JS asset gets an
+    # explicit route; every other non-API path returns index.html and the SPA
+    # renders it from `location.pathname`. Same-origin with the API, so no CORS.
+    #
+    # The negative lookahead is what keeps this catch-all honest: it must not
+    # shadow the API, the schema, the ops endpoints, static/media or the asset
+    # itself, so a genuine 404 under those prefixes stays a 404 rather than
+    # silently becoming the app shell (which would turn every mistyped API path
+    # into an HTML page a client cannot parse). It is last in the list for the
+    # same reason it always was — nothing real can hide behind it.
+    path("app.js", frontend_app, {"asset": "app.js"}, name="frontend-asset"),
+    re_path(
+        r"^(?!api/|healthz|readyz|version|static/|media/|app\.js).*$",
+        frontend_app, name="frontend",
+    ),
 ]
 
 if settings.DEBUG:

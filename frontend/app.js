@@ -157,10 +157,10 @@ const save=()=>sessionStorage.setItem('achr',JSON.stringify(
 function logout(){
   sessionStorage.removeItem('achr');
   sessionStorage.removeItem('achr.next');
-  // Clear the route too. Reloading with #/payslips still in the address bar
+  // Clear the route too. Reloading with /payslips still in the address bar
   // would send the next person who signs in on this machine to the last
   // screen the previous one was looking at.
-  location.hash='';
+  history.replaceState({},'','/');
   location.reload();
 }
 
@@ -255,7 +255,9 @@ const MENU=[
    ['overtime','Overtime'],['ottypes','Overtime Types'],
    ['structures','Salary Structures'],['structureassign','Structure Assignments'],
    ['payroll','Pay Runs'],['payslips','Payslips']]},
- {k:'reports',ic:'▥',l:'Reports'},
+ {ic:'▥',l:'Reports',ch:[['reports','Financial Statements'],
+   ['gl','General Ledger'],['journalregister','Journal Register'],
+   ['partystmt','Party Statement'],['ratios','Financial Ratios']]},
  {ic:'⚙',l:'Settings',ch:[['org','Organisation'],['branding','Document Branding'],
    ['team','Users & Roles'],['invites','Invitations'],['audit','Audit Log']]},
 ];
@@ -329,32 +331,31 @@ document.addEventListener('keydown',e=>{
 const VIEWS={};
 
 /* The screen named in the URL, or '' when there is none. Sanitised against
-   the menu: a hand-typed #/../../etc or #/nonsense must not be looked up in
+   the menu: a hand-typed /../../etc or /nonsense must not be looked up in
    VIEWS, and must not end up in innerHTML anywhere. */
 function routeOf(){
-  const raw=decodeURIComponent(String(location.hash||'').replace(/^#\/?/,'')).trim();
+  const raw=decodeURIComponent(location.pathname.replace(/^\/+/,'').replace(/\/+$/,'')).trim();
   if(!raw)return '';
   return (VIEWS[raw]&&FLAT().some(i=>i[0]===raw))?raw:'';
 }
 
 /* Back/forward, and any hand-edited address. Guarded on the current view so
-   that go()'s own hash write does not bounce straight back through here. */
-window.addEventListener('hashchange',()=>{
+   that go()'s own pushState does not bounce straight back through here. An
+   empty path (the site root) routes to the dashboard. */
+window.addEventListener('popstate',()=>{
   if(!S.access)return;                       // not signed in: nothing to route
   const r=routeOf();
-  if(r&&r!==window.__view)go(r,{replace:true});
+  if(r!==window.__view)go(r||'dash',{replace:true});
 });
 /* Navigate to a screen, and put it in the URL.
 
-   There were no routes before this: `go()` swapped the view and left the
-   address bar on /app/, so every reload started again at the dashboard and
-   the back button left the application entirely. "Refresh loses my page" was
-   not a state bug — there was no state in the URL to lose.
-
-   Hash routing rather than pushState because the whole app is one static file
-   served from a single Django route. pushState would put /app/invoices in the
-   address bar, and a reload would ask the server for a path it does not
-   serve. The hash never reaches the server.
+   History-API routing with clean paths (`/journal`, and `/` for the home
+   dashboard): the Django catch-all serves index.html for every non-API path,
+   so a reload or a bookmarked deep link resolves on the server and this SPA
+   renders it from `location.pathname`. (It used to be hash routing —
+   `#/journal` — because the server served the app only at a single `/app/`
+   route; the catch-all is what makes real paths safe now, and drops the
+   unprofessional `/app/#` from the address bar.)
 
    `replace` is passed when the URL is already right — restoring on boot, or
    responding to the user pressing Back — so that navigating does not push a
@@ -364,7 +365,8 @@ function go(p,opts){
   // Remembered so applyTheme() can re-render the current screen: the SVG
   // charts bake resolved colours into markup and cannot re-theme in place.
   window.__view=p;
-  if(!o.replace&&routeOf()!==p)location.hash='#/'+p;
+  if(routeOf()!==p){const u=p==='dash'?'/':'/'+p;
+    o.replace?history.replaceState({},'',u):history.pushState({},'',u);}
   document.querySelectorAll('#nav a,.top[data-p]').forEach(a=>
     a.classList.toggle('on',a.dataset.p===p));
   MENU.forEach((m,i)=>{if(m.ch&&m.ch.some(c=>c[0]===p)){
@@ -2800,9 +2802,10 @@ VIEWS.reports=async()=>{const y=new Date().getFullYear();
          ['balance-sheet','Balance Sheet'],['cash-flow','Cash Flow'],
          ['ar-aging','A/R Ageing'],['ap-aging','A/P Ageing']].map((r,i)=>
         `<button class="btn${i?' sec':''}" onclick="run('${r[0]}','${r[1]}')">${r[1]}</button>`).join('')}
-      <button class="btn sec" onclick="runLedger()">General Ledger</button>
      </div><div id="r_out"><div class="panel anim"><div class="empty"><h4>Pick a report</h4>
-     <p>Select a date range and choose a statement above.</p></div></div></div>`);};
+     <p>Select a date range and choose a statement above. The General Ledger,
+     Journal Register, Party Statement and Financial Ratios have their own
+     entries in the sidebar.</p></div></div></div>`);};
 async function run(k,t){const o=document.getElementById('r_out');
   // The user can navigate away while a report is still generating. Without
   // this the async continuation below writes into a node that no longer
@@ -2847,79 +2850,6 @@ async function run(k,t){const o=document.getElementById('r_out');
     o.innerHTML=`<div class="panel anim"><div class="empty">
     <h4 style="color:var(--dang)">Could not generate</h4><p>${esc(x.message)}</p></div></div>`;}}
 
-/* General ledger — the fourth core statement (G6). Unlike the aggregate
-   statements above it is per-account, so it carries its own account picker
-   while the shared From/To bar still scopes it. The ledger endpoint returns
-   the running balance the report prints, so the browser does no arithmetic. */
-let GL = { sel: null };
-async function runLedger() {
-  const o = document.getElementById('r_out'); if (!o) return;
-  o.innerHTML = skeleton();
-  let accs;
-  try { accs = await flattenAccounts(); }
-  catch (e) { o.innerHTML = errPanel(e.message); return; }
-  const posts = accs.filter(a => a.is_postable && a.is_active !== false);
-  if (!posts.length) {
-    o.innerHTML = `<div class="panel anim"><div class="empty"><h4>No postable accounts</h4>
-      <p>Add postable leaf accounts to the chart first.</p></div></div>`;
-    return;
-  }
-  const cur = posts.some(a => a.id === GL.sel) ? GL.sel : posts[0].id;
-  o.innerHTML = `<div class="tools anim" style="margin-bottom:12px">
-    <label style="margin:0">Account</label>
-    <select id="gl_acct" onchange="glShow(this.value)" style="min-width:300px">
-      ${posts.map(a => `<option value="${a.id}"${a.id === cur ? ' selected' : ''}>${esc(a.code)} — ${esc(a.name)}</option>`).join('')}
-    </select></div><div id="gl_out"></div>`;
-  glShow(cur);
-}
-async function glShow(id) {
-  GL.sel = id;
-  const out = document.getElementById('gl_out'); if (!out) return;
-  out.innerHTML = skeleton();
-  const f = document.getElementById('r_from').value, e = document.getElementById('r_to').value;
-  try {
-    const q = f && e ? `?date_from=${f}&date_to=${e}` : '';
-    const d = await api(`/api/v1/accounts/${id}/ledger/${q}`);
-    if (!document.getElementById('gl_out')) return;
-    const rows = d.results || [];
-    const c = C();
-    const a = d.account || {};
-    let h = `<div class="panel anim"><div class="ph"><h3>${esc(a.code || '')} — ${esc(a.name || '')}</h3>
-      <span style="color:var(--mut);font-size:11.5px">${dt(f)} – ${dt(e)}</span></div>`;
-    if (!rows.length) {
-      h += `<div class="empty"><h4>No posted movement</h4>
-        <p>Nothing hit this account in the selected range.</p></div></div>`;
-      out.innerHTML = h; return;
-    }
-    h += `<div class="rscroll"><table class="rtbl"><thead><tr>
-      <th>Date</th><th>Voucher</th><th>Journal</th><th>Memo</th>
-      <th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th>
-    </tr></thead><tbody>`;
-    if (d.opening_balance != null) h += `<tr><td colspan="6" style="color:var(--mut)">Opening balance</td>
-      <td class="num"><b>${money(d.opening_balance, c)}</b></td></tr>`;
-    rows.forEach(r => {
-      h += `<tr>
-        <td>${dt(r.entry_date)}</td>
-        <td><a href="#" class="mono" onclick="openEntry('${r.entry}');return false"
-          title="Open voucher">${esc(r.entry_number || '—')}</a></td>
-        <td class="mono">${esc(r.journal_code || '')}</td>
-        <td>${esc(r.entry_memo || r.description || '')}</td>
-        <td class="num">${parseFloat(r.debit) > 0 ? money(r.debit, c) : ''}</td>
-        <td class="num">${parseFloat(r.credit) > 0 ? money(r.credit, c) : ''}</td>
-        <td class="num">${money(r.running_balance, c)}</td></tr>`;
-    });
-    if (d.closing_balance != null) h += `<tr><td colspan="6"><b>Closing balance</b></td>
-      <td class="num"><b>${money(d.closing_balance, c)}</b></td></tr>`;
-    h += `</tbody></table></div>`;
-    if (d.next) h += `<div class="note" style="padding:10px 16px 14px">Showing the most recent
-      100 lines in range — narrow the dates to see earlier movement.</div>`;
-    h += `</div>`;
-    out.innerHTML = h;
-  } catch (x) {
-    if (document.getElementById('gl_out')) out.innerHTML = errPanel(x.message);
-  }
-}
-
 /* ── accept-invite deep link + session restore ─────────────────────────── */
 (function(){
   document.getElementById('api').value=location.origin;
@@ -2934,7 +2864,7 @@ async function glShow(id) {
     // No session. If the URL names a screen, remember it so the user lands
     // there after signing in rather than on the dashboard — a bookmarked
     // deep link should survive the login it triggers.
-    const wanted=String(location.hash||'').replace(/^#\/?/,'');
+    const wanted=location.pathname.replace(/^\/+/,'').replace(/\/+$/,'');
     if(wanted)sessionStorage.setItem('achr.next',wanted);
     return;
   }
@@ -2975,9 +2905,9 @@ function showAccept(token){
       const j=await r.json();
       if(!r.ok)throw new Error((j.error&&j.error.detail)||'This invitation is no longer valid');
       if(j.requires_login){x.textContent='This email already has an account — sign in instead.';
-        x.classList.remove('hidden');setTimeout(()=>location.href='/app/',2500);return;}
+        x.classList.remove('hidden');setTimeout(()=>location.href='/',2500);return;}
       S.access=j.access;S.refresh=j.refresh;S.tenant=j.tenant;S.user=j.user;save();
-      history.replaceState({},'','/app/');await boot();toast('Welcome aboard','ok');}
+      history.replaceState({},'','/');await boot();toast('Welcome aboard','ok');}
     catch(e){x.textContent=e.message;x.classList.remove('hidden');}
     finally{b.disabled=false;b.textContent='Accept invitation';}};
   c.appendChild(d);}
@@ -3069,8 +2999,8 @@ function jRow() {
     `<option value="${p.type}:${p.id}">${esc(p.label)} (${p.type[0].toUpperCase()})</option>`).join('');
   tr.innerHTML = `
     <td><input list="j_accs" class="j_acc" placeholder="Code or name"></td>
-    <td><select class="j_party" disabled
-        title="Enabled for accounts that require a party">${partyOpts}</select></td>
+    <td><select class="j_party"
+        title="Optional; expected on control accounts (A/R, A/P)">${partyOpts}</select></td>
     <td><input class="j_desc"></td>
     <td><input class="j_dr num" inputmode="decimal" placeholder="0.00"></td>
     <td><input class="j_cr num" inputmode="decimal" placeholder="0.00"></td>
@@ -3089,15 +3019,17 @@ function jRow() {
   jCalc();
 }
 
-/* Enable a line's party picker only when its account requires one, and flag an
-   account that requires a party while none is chosen. requires_party is not
-   enforced by the server on posting — this is guidance, not a gate. */
+/* A line's party picker is usable on *every* line — a party can be attached to
+   a revenue or expense line too, which is exactly what the party statement and
+   the ageing reports read. An account that *requires* a party (A/R, A/P
+   control) while none is chosen is flagged, not blocked: requires_party is
+   guidance, and the server does not gate posting on it. (Previously the picker
+   was disabled unless the account required a party, so on an ordinary line the
+   field was greyed out and a party could not be set at all.) */
 function jSyncParty(tr) {
   const acc = jAccount(tr.querySelector('.j_acc').value);
   const sel = tr.querySelector('.j_party');
   const need = !!(acc && acc.requires_party);
-  sel.disabled = !need;
-  if (!need) sel.value = '';
   sel.style.borderColor = (need && !sel.value) ? 'var(--warn)' : '';
 }
 
@@ -3200,9 +3132,9 @@ async function saveJournal() {
       debit: d || '0',
       credit: c || '0',
     };
-    // Party, when the account requires one and the row named it.
+    // Party, whenever the row named one (optional on any line).
     const partyEl = r.querySelector('.j_party');
-    if (partyEl && !partyEl.disabled && partyEl.value) {
+    if (partyEl && partyEl.value) {
       const [pt, pid] = partyEl.value.split(':');
       line.partner_type = pt;
       line.partner_id = pid;
@@ -3304,6 +3236,198 @@ function drillAccount(id, label) {
         Could not load ledger</h4><p>${esc(e.message)}</p></div>`;
     }
   })();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   GL detail reports — General Ledger · Journal Register · Party Statement ·
+   Financial Ratios. Each is its own sidebar entry (under Reports) and its own
+   VIEWS screen; they share the small renderers below and read the
+   /reporting/* endpoints, printing in ACHR's theme.
+   ══════════════════════════════════════════════════════════════════════════ */
+const grVal = id => (document.getElementById(id) || {}).value || '';
+const grEmpty = () => `<div class="panel anim"><div class="empty"><h4>Pick a range</h4>
+  <p>Choose a date range and press Run.</p></div></div>`;
+const grNoData = () => `<div class="empty"><h4>No data for this period</h4></div>`;
+
+function grDateInputs() {
+  const y = new Date().getFullYear();
+  return `<label style="margin:0">From</label>
+    <input id="gr_from" type="date" value="${y}-01-01">
+    <label style="margin:0">To</label>
+    <input id="gr_to" type="date" value="${new Date().toISOString().slice(0, 10)}">`;
+}
+function grHead(title, f, e) {
+  return `<div class="ph"><h3>${esc(title)}</h3>
+    <span style="color:var(--mut);font-size:11.5px">${dt(f)} – ${dt(e)}</span></div>`;
+}
+
+/* One place that runs a report and swaps the panel. `render(d, currency)`
+   returns the table markup; navigating away mid-request must not throw. */
+async function grReport(ep, title, render, extraQ) {
+  const o = document.getElementById('gr_out'); if (!o) return;
+  o.innerHTML = skeleton();
+  const f = grVal('gr_from'), e = grVal('gr_to');
+  try {
+    const d = await api(`/api/v1/reporting/${ep}/?date_from=${f}&date_to=${e}${extraQ || ''}`);
+    if (!document.getElementById('gr_out')) return;
+    o.innerHTML = `<div class="panel anim">${grHead(title, f, e)}${render(d, C(), f, e)}</div>`;
+  } catch (x) {
+    if (document.getElementById('gr_out')) o.innerHTML = errPanel(x.message);
+  }
+}
+
+/* Transactional table: `cols` is [{h, num?, cell(line)}]; multi-section reports
+   (the general ledger) get a heading row per account. */
+function grTxn(cols, sections, c) {
+  let h = `<div class="rscroll"><table class="rtbl"><thead><tr>` +
+    cols.map(col => `<th${col.num ? ' class="num"' : ''}>${col.h}</th>`).join('') +
+    `</tr></thead><tbody>`;
+  const many = sections.length > 1;
+  sections.forEach(s => {
+    if (many) h += `<tr style="background:var(--panel-2)">
+      <td colspan="${cols.length}"><b>${esc(s.title || '')}</b></td></tr>`;
+    (s.lines || []).forEach(l => {
+      const bold = l.is_bold ? ' style="font-weight:600"' : '';
+      h += `<tr${bold}>` +
+        cols.map(col => `<td${col.num ? ' class="num"' : ''}>${col.cell(l)}</td>`).join('') +
+        `</tr>`;
+    });
+  });
+  return h + `</tbody></table></div>`;
+}
+
+/* Statement-level totals strip, matching the classic reports screen. */
+function grTotals(d, c) {
+  const T = d.totals || {}; if (!Object.keys(T).length) return '';
+  return `<div style="padding:12px 16px;border-top:1px solid var(--line);
+    background:var(--panel-2);font-size:12.5px;display:flex;flex-wrap:wrap;gap:8px 26px">` +
+    Object.entries(T).map(([k, v]) =>
+      `<span>${esc(k.replace(/_/g, ' '))}: <b>${money(v, c)}</b></span>`).join('') + `</div>`;
+}
+
+const grAmt = (v, c) => Number(v) ? money(v, c) : '';
+
+/* ── General Ledger ─ per-account: opening → movements → closing balance.
+   The account picker defaults to the whole chart; choosing one account scopes
+   the report to that account and its descendants (the endpoint's `account`). */
+VIEWS.gl = async () => {
+  V(skeleton());
+  let accs = [];
+  try { accs = (await flattenAccounts()).filter(a => a.is_postable && a.is_active !== false); }
+  catch (e) { return V(errPanel(e.message)); }
+  V(`<div class="tools anim">
+     <label style="margin:0">Account</label>
+     <select id="gr_acct" style="min-width:260px"><option value="">All accounts</option>
+       ${accs.map(a => `<option value="${a.id}">${esc(a.code)} — ${esc(a.name)}</option>`).join('')}
+     </select>
+     ${grDateInputs()}
+     <button class="btn" onclick="grGeneralLedger()">Run</button></div>
+     <div id="gr_out">${grEmpty()}</div>`);
+};
+function grGeneralLedger() {
+  const acc = grVal('gr_acct');
+  grReport('general-ledger', 'General Ledger', (d, c) =>
+    (d.sections || []).length
+      ? grTxn([
+          { h: 'Date', cell: l => l.meta && l.meta.kind === 'movement' ? dt(l.meta.date) : '' },
+          { h: 'Ref', cell: l => esc((l.meta && l.meta.number) || '') },
+          { h: 'Description', cell: l => esc(l.label) },
+          { h: 'Debit', num: 1, cell: l => grAmt(l.debit, c) },
+          { h: 'Credit', num: 1, cell: l => grAmt(l.credit, c) },
+          { h: 'Balance', num: 1, cell: l => money(l.amount, c) },
+        ], d.sections, c) + grTotals(d, c)
+      : grNoData(), acc ? `&account=${acc}` : '');
+}
+
+/* ── Journal Register ─ every posting in book order. */
+VIEWS.journalregister = () => {
+  V(`<div class="tools anim">${grDateInputs()}
+     <button class="btn" onclick="grJournalRegister()">Run</button></div>
+     <div id="gr_out">${grEmpty()}</div>`);
+};
+function grJournalRegister() {
+  grReport('journal-register', 'Journal Register', (d, c) =>
+    (d.sections && d.sections[0] && d.sections[0].lines.length)
+      ? grTxn([
+          { h: 'Date', cell: l => dt(l.meta.date) },
+          { h: 'Entry', cell: l => esc(l.meta.number || '') },
+          { h: 'Account', cell: l => esc(l.label) },
+          { h: 'Description', cell: l => esc(l.meta.description || l.meta.memo || '') },
+          { h: 'Party', cell: l => esc(l.meta.partner || '') },
+          { h: 'Debit', num: 1, cell: l => grAmt(l.debit, c) },
+          { h: 'Credit', num: 1, cell: l => grAmt(l.credit, c) },
+        ], d.sections, c) + grTotals(d, c)
+      : grNoData());
+}
+
+/* ── Party Statement ─ one customer's / supplier's control-account ledger. */
+const PARTY = { cust: [], vend: [] };
+VIEWS.partystmt = async () => {
+  V(skeleton());
+  const [cu, ve] = await Promise.all([list('customers'), list('vendors')]);
+  PARTY.cust = cu || []; PARTY.vend = ve || [];
+  V(`<div class="tools anim">
+     <label style="margin:0">Type</label>
+     <select id="gr_ptype" onchange="grPartyType()">
+       <option value="customer">Customer</option><option value="vendor">Vendor</option></select>
+     <label style="margin:0">Party</label>
+     <select id="gr_pid" style="min-width:180px"></select>
+     ${grDateInputs()}
+     <button class="btn" onclick="grPartyStatement()">Run</button></div>
+     <div id="gr_out">${grEmpty()}</div>`);
+  grPartyType();
+};
+function grPartyType() {
+  const arr = grVal('gr_ptype') === 'vendor' ? PARTY.vend : PARTY.cust;
+  const sel = document.getElementById('gr_pid'); if (!sel) return;
+  sel.innerHTML = arr.length
+    ? arr.map(x => `<option value="${x.id}">${esc(x.name || x.display_name || x.code || x.id)}</option>`).join('')
+    : `<option value="">— none —</option>`;
+}
+function grPartyStatement() {
+  const t = grVal('gr_ptype'), pid = grVal('gr_pid');
+  if (!pid) { toast('Pick a party first', 'warn'); return; }
+  grReport('party-statement', 'Party Statement', (d, c) => {
+    const p = (d.metadata && d.metadata.partner) || {};
+    return `<div style="padding:0 16px 10px;color:var(--mut);font-size:12px">
+        ${esc(p.name || '(unnamed)')} · ${esc(p.type || '')}</div>` +
+      grTxn([
+        { h: 'Date', cell: l => l.meta && l.meta.kind === 'movement' ? dt(l.meta.date) : '' },
+        { h: 'Ref', cell: l => esc((l.meta && l.meta.number) || '') },
+        { h: 'Account', cell: l => esc((l.meta && l.meta.account_code) || '') },
+        { h: 'Description', cell: l => esc(l.label) },
+        { h: 'Debit', num: 1, cell: l => grAmt(l.debit, c) },
+        { h: 'Credit', num: 1, cell: l => grAmt(l.credit, c) },
+        { h: 'Balance', num: 1, cell: l => money(l.amount, c) },
+      ], d.sections, c) + grTotals(d, c);
+  }, `&partner_type=${t}&partner_id=${pid}`);
+}
+
+/* ── Financial Ratios ─ grouped indicators + the figures behind them. */
+VIEWS.ratios = () => {
+  V(`<div class="tools anim">${grDateInputs()}
+     <button class="btn" onclick="grRatiosRun()">Run</button></div>
+     <div id="gr_out">${grEmpty()}</div>`);
+};
+function grRatiosRun() {
+  grReport('financial-ratios', 'Financial Ratios', (d, c) => {
+    let h = (d.warnings || []).map(w =>
+      `<div style="padding:8px 16px;color:var(--warn);font-size:11.5px">${esc(w)}</div>`).join('');
+    (d.sections || []).forEach(s => {
+      const fig = s.key === 'figures';
+      h += `<div class="rscroll"><table class="rtbl"><thead><tr>
+        <th>${esc(s.title)}</th><th class="num">${fig ? 'Amount' : 'Value'}</th></tr></thead><tbody>`;
+      (s.lines || []).forEach(l => {
+        const v = fig ? money(l.amount, c)
+          : (l.meta && l.meta.na ? '<span style="color:var(--mut)">n/a</span>' : esc(String(l.amount)));
+        const note = (!fig && l.note && !(l.meta && l.meta.na))
+          ? `<span style="color:var(--mut);font-size:11px"> · ${esc(l.note)}</span>` : '';
+        h += `<tr><td>${esc(l.label)}${note}</td><td class="num">${v}</td></tr>`;
+      });
+      h += `</tbody></table></div>`;
+    });
+    return h;
+  });
 }
 
 /* The journal voucher, as a printable document. */

@@ -34,6 +34,7 @@ from apps.core.serializers import (
     MoneyField,
     RateField,
     TenantScopedSerializer,
+    replace_draft_lines,
 )
 from apps.sales.models import (
     CreditNote,
@@ -177,36 +178,6 @@ class InvoiceLineSerializer(TenantScopedSerializer):
         # Assigned from list position by the parent, so re-ordering lines in
         # the UI cannot collide with ``uq_invoice_line_number``.
         read_only_fields = ("line_number",)
-
-
-def _replace_draft_lines(model, *, tenant_id, **filters) -> None:
-    """Drop a draft document's lines so they can be rewritten.
-
-    Two guard rails stand in the way, and this is where sales steps around
-    them — deliberately, and only for a draft:
-
-    * ``TenantQuerySet.delete()`` raises: bulk delete is disabled on
-      tenant-scoped models so that a stray ``.delete()`` cannot wipe a
-      customer's ledger.
-
-    Both callers have already refused anything past DRAFT in ``validate()``,
-    so the rows being dropped are lines of a document that has no number, no
-    journal entry and has never been sent to anybody. They are intermediate
-    input to a document still being typed, not financial records.
-
-    Without this the whole update path was dead: ``PATCH /invoices/{id}/``
-    with any ``lines`` payload answered *403 "Bulk delete is disabled on
-    tenant-scoped models"* — a message about an internal guard, on a request
-    that was entirely legitimate. Nothing caught it because no test and no
-    screen had ever edited a draft.
-
-    The plain (non-tenant) queryset is filtered explicitly by ``tenant_id`` so
-    the bypass cannot accidentally widen its own scope — the same shape, and
-    the same reasoning, as ``payroll.services.engine._discard_payslips``.
-    """
-    from django.db.models.query import QuerySet  # local: see docstring
-
-    QuerySet(model=model).filter(tenant_id=tenant_id, **filters).delete()
 
 
 class InvoiceSerializer(TenantScopedSerializer):
@@ -423,7 +394,7 @@ class InvoiceSerializer(TenantScopedSerializer):
                 # Wholesale replacement, not a diff: line identity carries no
                 # business meaning on a draft, and a partial diff is how a
                 # "removed" line survives and quietly inflates the total.
-                _replace_draft_lines(
+                replace_draft_lines(
                     InvoiceLine, tenant_id=invoice.tenant_id, invoice=invoice
                 )
                 self._write_lines(invoice, lines)
@@ -681,7 +652,7 @@ class CreditNoteSerializer(TenantScopedSerializer):
             if lines is not None:
                 # Same bug, same fix: this path 403'd on the internal
                 # bulk-delete guard for every credit-note amendment.
-                _replace_draft_lines(
+                replace_draft_lines(
                     CreditNoteLine, tenant_id=note.tenant_id, credit_note=note
                 )
                 self._write_lines(note, lines)

@@ -25,8 +25,8 @@ and their own idempotency boundary, none of which a PATCH on a column has.
 from __future__ import annotations
 
 import logging
-import uuid
-from datetime import date
+
+from apps.accounting.services.sequences import allocate_document_number
 from decimal import Decimal
 from typing import Optional
 
@@ -96,51 +96,6 @@ class MissingIdempotencyKey(DomainError):
         "retried request records a second receipt for the same money."
     )
 
-
-def allocate_document_number(tenant_id: uuid.UUID, scope: str, prefix: str,
-                             on_date: date, model=None) -> str:
-    """Take the next gapless number for ``(tenant, scope, year)``.
-
-    Same locked-counter mechanism as
-    ``apps.sales.services.invoice_workflow._allocate_invoice_number``, and for
-    the same reason: ``MAX(number) + 1`` under READ COMMITTED hands the same
-    number to two concurrent writers, and a PostgreSQL ``SEQUENCE`` burns a
-    number on rollback — which is precisely the gap a tax authority reads as a
-    deleted document.
-
-    ``model`` is the bootstrap escape hatch, and it is needed in practice: a
-    counter row created *after* documents already carry numbers restarts at 1
-    and the first allocation collides with ``uq_payment_number``. That is
-    exactly what happens to any tenant whose data predates this endpoint —
-    including the seeded demo tenant, whose PMT-2026-000001 was written
-    without a counter. Skipping numbers that are already taken costs one
-    indexed lookup per allocation in steady state (the first candidate is
-    free), and it happens under the counter's row lock, so two concurrent
-    writers cannot land on the same skipped value.
-    """
-    from apps.accounting.models_sequence import DocumentSequence
-
-    sequence, _ = DocumentSequence.all_tenants.select_for_update().get_or_create(
-        tenant_id=tenant_id,
-        scope=scope,
-        year=on_date.year,
-        defaults={"next_value": 1, "prefix": prefix},
-    )
-    value = sequence.next_value
-    candidate = sequence.format(value)
-    if model is not None:
-        taken = model.all_tenants.filter(tenant_id=tenant_id)
-        while taken.filter(number=candidate).exists():
-            value += 1
-            candidate = sequence.format(value)
-    sequence.next_value = value + 1
-    sequence.save(update_fields=["next_value", "updated_at"])
-    return candidate
-
-
-# ---------------------------------------------------------------------------
-# Gateway configuration
-# ---------------------------------------------------------------------------
 
 class PaymentGatewayConfigViewSet(RbacOnlyQuerysetMixin, TenantModelViewSet):
     """Configured payment providers. Secrets never leave the server."""
@@ -245,8 +200,8 @@ class PaymentViewSet(IdempotentActionMixin, TenantModelViewSet):
             payment = serializer.save()
             if not payment.number:
                 payment.number = allocate_document_number(
-                    payment.tenant_id, "payment", "PMT", payment.payment_date,
-                    model=Payment,
+                    payment.tenant_id, scope="payment", prefix="PMT",
+                    on_date=payment.payment_date, collision_model=Payment,
                 )
                 payment.save(update_fields=["number", "updated_at"])
 
@@ -476,7 +431,8 @@ class PaymentViewSet(IdempotentActionMixin, TenantModelViewSet):
             )
             refund.save()
             refund.number = allocate_document_number(
-                locked.tenant_id, "refund", "REF", refund_date, model=Refund
+                locked.tenant_id, scope="refund", prefix="REF",
+                on_date=refund_date, collision_model=Refund,
             )
             refund.save(update_fields=["number", "updated_at"])
             return refund
@@ -558,5 +514,4 @@ __all__ = [
     "WebhookEventViewSet",
     "PaymentGatewayConfigViewSet",
     "MissingIdempotencyKey",
-    "allocate_document_number",
 ]

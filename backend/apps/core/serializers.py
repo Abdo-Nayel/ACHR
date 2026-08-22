@@ -42,6 +42,29 @@ AUDIT_FIELDS: tuple[str, ...] = (
 )
 
 
+def replace_draft_lines(model, *, tenant_id, **filters) -> None:
+    """Drop a draft document's child lines so they can be rewritten wholesale.
+
+    Editing a draft replaces its lines rather than diffing them — a diff is how
+    a "removed" line survives and quietly inflates a total. But
+    ``TenantQuerySet.delete()`` refuses bulk delete, so ``obj.lines.all()
+    .delete()`` raises *403 "Bulk delete is disabled on tenant-scoped models"*
+    on an entirely legitimate draft edit. Callers must have already refused
+    anything past DRAFT, so these rows have no number, no journal entry and were
+    never sent — intermediate input to a document still being typed, not
+    financial records.
+
+    The bypass goes through a plain (non-tenant) ``QuerySet`` filtered
+    explicitly by ``tenant_id`` so it cannot widen its own scope. This was
+    copied three ways — sales' ``_replace_draft_lines``, and inline in the
+    expenses Bill and VendorCredit serializers (the Bill copy used the disabled
+    manager and so 403'd on every bill edit) — now one function.
+    """
+    from django.db.models.query import QuerySet  # local: avoids a manager import cycle
+
+    QuerySet(model=model).filter(tenant_id=tenant_id, **filters).delete()
+
+
 class MoneyField(serializers.DecimalField):
     """A monetary amount, always serialised as a JSON **string**.
 

@@ -24,7 +24,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Q, Sum
+from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import action
@@ -209,140 +209,37 @@ class ProjectViewSet(TenantModelViewSet):
         ``POST /invoices/{id}/issue``, and keeping the two separate means a
         reviewer sees the lines before a customer does.
         """
-        from apps.accounting.models import Account
-        from apps.core.exceptions import DomainError
-        from apps.sales.models import Invoice, InvoiceLine
+        from apps.projects.services.invoicing import create_invoice_from_time
 
         project = self.get_object()
         body = CreateInvoiceSerializer(data=request.data)
         body.is_valid(raise_exception=True)
         payload = body.validated_data
 
-        if project.customer_id is None:
-            raise DomainError(
-                "This project has no customer, so its time cannot be invoiced."
-            )
-        if not project.is_billable:
-            raise DomainError("This project is marked non-billable.")
-
-        issue_date = payload.get("issue_date") or timezone.localdate()
-        due_date = payload.get("due_date") or issue_date
-
         try:
-            with transaction.atomic():
-                entries_q = Q(
-                    project=project,
-                    status=TimesheetEntry.Status.APPROVED,
-                    is_billable=True,
-                    invoice_line__isnull=True,
-                )
-                if payload.get("date_from"):
-                    entries_q &= Q(work_date__gte=payload["date_from"])
-                if payload.get("date_to"):
-                    entries_q &= Q(work_date__lte=payload["date_to"])
-
-                entries = list(
-                    TimesheetEntry.objects.filter(entries_q)
-                    .select_for_update()
-                    .select_related("employee", "task")
-                    .order_by("work_date", "created_at")
-                )
-                if not entries:
-                    raise DomainError(
-                        "There is no approved, un-invoiced billable time on "
-                        "this project for the requested period."
-                    )
-
-                revenue_account = (
-                    Account.objects.filter(system_key="service_revenue").first()
-                    or Account.objects.filter(system_key="sales_revenue").first()
-                )
-                if revenue_account is None:
-                    raise DomainError(
-                        "No service revenue account is configured for this "
-                        "organisation; seed the chart of accounts first."
-                    )
-
-                invoice = Invoice.objects.create(
-                    tenant_id=project.tenant_id,
-                    customer_id=project.customer_id,
-                    issue_date=issue_date,
-                    due_date=due_date,
-                    currency=project.currency,
-                    project=project,
-                    status=Invoice.Status.DRAFT,
-                    notes=payload.get("notes", ""),
-                    created_by_id=request.user.id,
-                    updated_by_id=request.user.id,
-                )
-
-                groups: dict = {}
-                for entry in entries:
-                    key = entry.task_id if payload.get("group_by_task") else entry.pk
-                    groups.setdefault(key, []).append(entry)
-
-                subtotal = ZERO
-                for index, (_, members) in enumerate(groups.items(), start=1):
-                    hours = sum((Decimal(e.hours) for e in members), ZERO)
-                    amount = sum((Decimal(e.billable_amount) for e in members), ZERO)
-                    # Unit price is derived from the group's own total so that
-                    # quantity * unit_price == amount exactly; averaging rates
-                    # across entries would leave a rounding residue on the
-                    # invoice that the ledger then refuses to balance.
-                    unit_price = (amount / hours) if hours else ZERO
-                    first = members[0]
-                    label = (
-                        first.task.name if first.task_id else first.description
-                    ) or f"Professional services — {project.name}"
-
-                    line = InvoiceLine.objects.create(
-                        tenant_id=project.tenant_id,
-                        invoice=invoice,
-                        line_number=index,
-                        description=label[:500],
-                        quantity=hours,
-                        unit_price=unit_price,
-                        line_subtotal=amount,
-                        line_tax=ZERO,
-                        line_total=amount,
-                        income_account=revenue_account,
-                        project=project,
-                        created_by_id=request.user.id,
-                        updated_by_id=request.user.id,
-                    )
-                    subtotal += amount
-
-                    now = timezone.now()
-                    for entry in members:
-                        # OneToOne: only the first group may claim an entry.
-                        # Set before the transition so a failure here cannot
-                        # leave an INVOICED entry with no invoice line.
-                        entry.invoice_line = line
-                        entry.invoiced_at = now
-                        entry.status = TimesheetEntry.Status.INVOICED
-                        entry.updated_by_id = request.user.id
-                        entry.save(update_fields=[
-                            "invoice_line", "invoiced_at", "status",
-                            "updated_by", "updated_at",
-                        ])
-
-                invoice.subtotal_amount = subtotal
-                invoice.total_amount = subtotal
-                invoice.amount_due = subtotal
-                invoice.save(update_fields=[
-                    "subtotal_amount", "total_amount", "amount_due", "updated_at",
-                ])
+            result = create_invoice_from_time(
+                project.pk,
+                tenant_id=project.tenant_id,
+                user_id=request.user.id,
+                issue_date=payload.get("issue_date"),
+                due_date=payload.get("due_date"),
+                date_from=payload.get("date_from"),
+                date_to=payload.get("date_to"),
+                group_by_task=payload.get("group_by_task", False),
+                notes=payload.get("notes", ""),
+            )
         except Exception as exc:  # noqa: BLE001
             raise_as_api_error(exc)
             raise  # pragma: no cover
 
+        invoice = result.invoice
         return Response(
             {
                 "invoice": str(invoice.pk),
                 "status": invoice.status,
                 "currency": invoice.currency,
-                "line_count": len(groups),
-                "entry_count": len(entries),
+                "line_count": result.line_count,
+                "entry_count": result.entry_count,
                 "total_amount": str(invoice.total_amount),
             },
             status=status.HTTP_201_CREATED,

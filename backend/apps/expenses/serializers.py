@@ -27,6 +27,7 @@ from rest_framework import serializers
 from apps.core.fields import ZERO, quantize_currency
 from apps.core.serializers import (
     MoneyField,
+    replace_draft_lines,
     QuantityField,
     RateField,
     ReadOnlyModelSerializer,
@@ -400,7 +401,7 @@ class BillSerializer(TenantScopedSerializer):
             if lines is not None:
                 # Wholesale replacement, not a diff: a partial diff is how a
                 # "removed" line survives and quietly inflates the payable.
-                bill.lines.all().delete()
+                replace_draft_lines(BillLine, tenant_id=bill.tenant_id, bill=bill)
                 self._write_lines(bill, lines)
             self._recalculate_totals(bill)
         bill.refresh_from_db()
@@ -593,14 +594,10 @@ class VendorCreditSerializer(TenantScopedSerializer):
         with transaction.atomic():
             credit = super().update(instance, validated_data)
             if lines is not None:
-                # Same wholesale replacement, and the same reason it must go
-                # through the plain queryset: bulk delete is disabled on
-                # tenant-scoped models. See _replace_draft_lines in sales.
-                from django.db.models.query import QuerySet
-
-                QuerySet(model=VendorCreditLine).filter(
-                    tenant_id=credit.tenant_id, credit_note=credit
-                ).delete()
+                # Same wholesale replacement through the shared helper.
+                replace_draft_lines(
+                    VendorCreditLine, tenant_id=credit.tenant_id, credit_note=credit
+                )
                 self._write_lines(credit, lines)
             self._recalculate(credit)
         credit.refresh_from_db()

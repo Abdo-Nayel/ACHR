@@ -95,28 +95,15 @@ def _system_account(tenant_id: uuid.UUID, system_key: str) -> Account:
 def _allocate_invoice_number(tenant_id: uuid.UUID, issue_date: date) -> str:
     """Take the next gapless invoice number for (tenant, year).
 
-    Uses the locked counter row rather than ``MAX(number) + 1``: under READ
-    COMMITTED the latter hands the same number to two concurrent issuers, and
-    the duplicate surfaces only at the unique index, after the GL entry has
-    already been posted inside the same transaction.
-
-    Because the counter is incremented inside the caller's transaction, a
-    rollback returns the number — which is exactly what "gapless" requires,
-    and exactly what a raw PostgreSQL SEQUENCE cannot give.
+    Delegates to the shared allocator (``apps.accounting.services.sequences``),
+    the single locked-counter implementation — see its docstring for why it is
+    neither ``MAX(number)+1`` nor a PostgreSQL ``SEQUENCE``.
     """
-    from apps.accounting.models_sequence import DocumentSequence
+    from apps.accounting.services.sequences import allocate_document_number
 
-    year = issue_date.year
-    seq, _ = DocumentSequence.all_tenants.select_for_update().get_or_create(
-        tenant_id=tenant_id,
-        scope="invoice",
-        year=year,
-        defaults={"next_value": 1, "prefix": "INV"},
+    return allocate_document_number(
+        tenant_id, scope="invoice", prefix="INV", on_date=issue_date
     )
-    value = seq.next_value
-    seq.next_value = value + 1
-    seq.save(update_fields=["next_value", "updated_at"])
-    return seq.format(value)
 
 
 def _locked_invoice(invoice_id: uuid.UUID, tenant_id: uuid.UUID) -> Invoice:

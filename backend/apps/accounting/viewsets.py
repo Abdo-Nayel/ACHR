@@ -56,13 +56,14 @@ from apps.accounting.serializers import (
     LedgerLineSerializer,
     TaxRateSerializer,
 )
-from apps.core.exceptions import DomainError, IllegalTransitionError, PeriodClosedError
+from apps.core.exceptions import DomainError, IllegalTransitionError
 from apps.core.fields import ZERO
 from apps.core.pagination import LedgerCursorPagination, SmallPagePagination
 from apps.core.serializers import (
     ReasonRequiredTransitionSerializer,
     TransitionSerializer,
 )
+from apps.accounting.services.periods import transition_period
 from apps.core.viewsets import (
     IdempotentActionMixin,
     ReadOnlyTenantViewSet,
@@ -341,9 +342,9 @@ class FiscalYearViewSet(TenantModelViewSet):
 class FiscalPeriodViewSet(IdempotentActionMixin, TenantModelViewSet):
     """Fiscal periods and the three moves that lock and unlock the books.
 
-    There is no ``close_period`` service in
-    ``apps.accounting.services`` yet, so the transition is implemented here —
-    but with the two properties that matter kept intact:
+    The moves themselves live in ``apps.accounting.services.periods``
+    (``transition_period``); this viewset is a thin adapter over it. The two
+    properties that matter, kept intact by the service:
 
     * ``SELECT ... FOR UPDATE`` on the period row. ``post_entry`` takes
       ``FOR SHARE`` on the same row, so a close and a concurrent posting are
@@ -370,88 +371,6 @@ class FiscalPeriodViewSet(IdempotentActionMixin, TenantModelViewSet):
         "reopen": ["accounting.fiscal_period.reopen"],
     }
 
-    #: The period state machine. ``FiscalPeriod`` has no ``transition()``
-    #: method of its own, so the map lives here — explicit, in one place, and
-    #: consulted by all three actions rather than each re-deriving it.
-    ALLOWED_TRANSITIONS: dict[str, set[str]] = {
-        FiscalPeriod.Status.OPEN: {
-            FiscalPeriod.Status.SOFT_CLOSED,
-            FiscalPeriod.Status.CLOSED,
-        },
-        FiscalPeriod.Status.SOFT_CLOSED: {
-            FiscalPeriod.Status.CLOSED,
-            FiscalPeriod.Status.OPEN,
-        },
-        FiscalPeriod.Status.CLOSED: {FiscalPeriod.Status.OPEN},
-    }
-
-    # -- helpers ------------------------------------------------------------
-
-    def _transition(self, request, period: FiscalPeriod, target: str, *, reason: str = ""):
-        locked = (
-            FiscalPeriod.all_tenants.select_for_update()
-            .filter(pk=period.pk, tenant_id=period.tenant_id)
-            .first()
-        )
-        if locked is None:  # pragma: no cover - defensive
-            raise DomainError("The fiscal period disappeared while it was being locked.")
-
-        if locked.status == target:
-            return locked
-        allowed = self.ALLOWED_TRANSITIONS.get(locked.status, set())
-        if target not in allowed:
-            raise IllegalTransitionError(
-                f"Fiscal period '{locked.name}' is "
-                f"{locked.get_status_display().lower()} and cannot become "
-                f"{target}."
-            )
-
-        if target in (FiscalPeriod.Status.CLOSED, FiscalPeriod.Status.SOFT_CLOSED):
-            drafts = JournalEntry.all_tenants.filter(
-                tenant_id=locked.tenant_id,
-                period_id=locked.pk,
-                status=JournalEntry.Status.DRAFT,
-            ).count()
-            if drafts and target == FiscalPeriod.Status.CLOSED:
-                raise PeriodClosedError(
-                    f"Period '{locked.name}' still has {drafts} unposted draft "
-                    f"entr{'y' if drafts == 1 else 'ies'}. Closing now strands "
-                    f"them: they can never be posted into a closed period and "
-                    f"they can never be corrected in place. Post or void them "
-                    f"first."
-                )
-
-        if target == FiscalPeriod.Status.OPEN and locked.status == FiscalPeriod.Status.CLOSED:
-            if locked.fiscal_year.status == FiscalYear.Status.CLOSED:
-                raise PeriodClosedError(
-                    f"Fiscal year '{locked.fiscal_year.name}' is closed; its "
-                    f"net income has already been rolled into equity. Reopening "
-                    f"a period inside it would change a figure that has been "
-                    f"filed. Reopen the year first."
-                )
-
-        now = timezone.now()
-        actor_id = getattr(request.user, "id", None)
-        fields: dict[str, Any] = {
-            "status": target,
-            "updated_by_id": actor_id,
-            "updated_at": now,
-        }
-        if target == FiscalPeriod.Status.CLOSED:
-            fields["closed_at"] = now
-            fields["closed_by_id"] = actor_id
-        elif target == FiscalPeriod.Status.OPEN:
-            fields["closed_at"] = None
-            fields["closed_by_id"] = None
-
-        FiscalPeriod.all_tenants.filter(pk=locked.pk).update(**fields)
-        locked.refresh_from_db()
-        logger.info(
-            "fiscal period %s -> %s by user=%s reason=%r",
-            locked.name, target, actor_id, reason,
-        )
-        return locked
-
     # -- actions ------------------------------------------------------------
 
     @action(detail=True, methods=["post"], url_path="close")
@@ -468,8 +387,9 @@ class FiscalPeriodViewSet(IdempotentActionMixin, TenantModelViewSet):
         return self.run_idempotent(
             request,
             transition="close",
-            run=lambda _key: self._transition(
-                request, period, FiscalPeriod.Status.CLOSED,
+            run=lambda _key: transition_period(
+                period.pk, tenant_id=period.tenant_id, target=FiscalPeriod.Status.CLOSED,
+                user_id=getattr(request.user, "id", None),
                 reason=body.validated_reason(),
             ),
         )
@@ -489,8 +409,9 @@ class FiscalPeriodViewSet(IdempotentActionMixin, TenantModelViewSet):
         return self.run_idempotent(
             request,
             transition="soft_close",
-            run=lambda _key: self._transition(
-                request, period, FiscalPeriod.Status.SOFT_CLOSED,
+            run=lambda _key: transition_period(
+                period.pk, tenant_id=period.tenant_id, target=FiscalPeriod.Status.SOFT_CLOSED,
+                user_id=getattr(request.user, "id", None),
                 reason=body.validated_reason(),
             ),
         )
@@ -516,8 +437,9 @@ class FiscalPeriodViewSet(IdempotentActionMixin, TenantModelViewSet):
         return self.run_idempotent(
             request,
             transition="reopen",
-            run=lambda _key: self._transition(
-                request, period, FiscalPeriod.Status.OPEN,
+            run=lambda _key: transition_period(
+                period.pk, tenant_id=period.tenant_id, target=FiscalPeriod.Status.OPEN,
+                user_id=getattr(request.user, "id", None),
                 reason=body.validated_reason(),
             ),
         )

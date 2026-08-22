@@ -46,7 +46,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.accounting.models import Account, Journal, JournalEntry
-from apps.accounting.services.posting import (
+from apps.accounting.services import (
     JournalEntryDraft,
     UnbalancedEntry,
     post_entry,

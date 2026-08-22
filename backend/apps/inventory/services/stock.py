@@ -38,7 +38,7 @@ from django.db.models import F, Q, Sum
 from django.utils import timezone
 
 from apps.accounting.models import Account, Journal, JournalEntry
-from apps.accounting.services.posting import JournalEntryDraft, post_entry
+from apps.accounting.services import JournalEntryDraft, post_entry
 from apps.core.fields import ZERO, to_money
 from apps.inventory.models import (
     Item,

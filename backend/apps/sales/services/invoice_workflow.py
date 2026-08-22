@@ -51,7 +51,7 @@ from django.db.models import Case, Q, Sum, Value, When
 from django.utils import timezone
 
 from apps.accounting.models import Account, JournalEntry
-from apps.accounting.services.posting import (
+from apps.accounting.services import (
     JournalEntryDraft,
     post_entry,
     void_entry,

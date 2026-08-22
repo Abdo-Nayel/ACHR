@@ -54,7 +54,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.accounting.models import Account, JournalEntry
-from apps.accounting.services.posting import (
+from apps.accounting.services import (
     JournalEntryDraft,
     LineDraft,
     post_entry,

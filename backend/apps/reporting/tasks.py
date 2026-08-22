@@ -330,7 +330,7 @@ def nightly_ledger_integrity_check(self) -> dict[str, Any]:
     and so the alert says "3 of 412 tenants" instead of "one tenant, unknown
     how many others".
     """
-    from apps.accounting.services.posting import assert_ledger_balanced
+    from apps.accounting.services import assert_ledger_balanced
 
     failures: list[dict[str, str]] = []
     checked = 0

@@ -1000,11 +1000,9 @@ const FORMS={
    ['reorder_point','Reorder Point','money',0,null,'0.00'],
    ['income_account','Income Account','opt',0,'income'],
    ['expense_account','COGS Account','opt',0,'expense']]},
- account:{t:'New Account',ep:'accounts',after:'accounts',f:[
-   ['code','Account Code','text',1],['name','Account Name','text',1],
-   ['type','Account Type','sel',1,[['asset','Asset'],['liability','Liability'],
-      ['equity','Equity'],['income','Income'],['expense','Expense']]],
-   ['parent','Parent Account','opt',0,'all'],['description','Description','text']]},
+ /* Accounts are created from the Chart of Accounts tree (addAccount), not a
+    flat form: the code is server-allocated from the parent, so a form that let
+    a user type one would post a number the server ignores. */
  department:{t:'New Department',ep:'departments',after:'departments',f:[
    ['code','Code','text',1],['name','Department Name','text',1],
    ['parent','Parent Department','opt',0,'dept']]},
@@ -2244,13 +2242,268 @@ VIEWS.timesheets=simple('timesheets',null,['Date','Employee','Project','~Hours',
   t=>`<tr><td>${dt(t.work_date)}</td><td>${esc(t.employee_name||'—')}</td>
     <td>${esc(t.project_name||'—')}</td><td class="num">${t.hours??'—'}</td>
     <td>${t.is_billable?'Yes':'No'}</td><td>${tag(t.status)}</td></tr>`,'No time entries');
-VIEWS.accounts=simple('accounts','account',['Code','Account Name','Type','~Balance',''],
-  a=>`<tr><td class="mono">${esc(a.code)}</td>
-    <td style="${a.is_postable?'':'font-weight:600'}">${esc(a.name)}</td>
-    <td>${({asset:'Asset',liability:'Liability',equity:'Equity',income:'Income',
-      expense:'Expense'})[a.type]||a.type}</td>
-    <td class="num">${money(a.cached_balance,C())}</td>
-    <td>${a.is_postable?'':'<span class="tag t-mut">Header</span>'}</td></tr>`,'Chart of accounts is empty');
+/* ── CHART OF ACCOUNTS (G4) ────────────────────────────────────────────────
+   The chart is a positional five-level tree: the code *is* the hierarchy, and
+   a flat table throws that away. This screen renders the tree the server
+   returns from /accounts/tree/ (one unpaginated request — a tree cut at an
+   arbitrary row is not a tree), with expand/collapse, a search that prunes to
+   matching branches, a per-level count bar from /accounts/stats/, and a
+   top-down add flow: pick a summary node, name a child and choose its side,
+   and the server allocates the next free code. The client never invents a
+   number, so two accountants adding at once cannot collide. */
+let CHART = { roots: [], flat: [], q: '', sel: null, open: new Set() };
+
+const errPanel = m => `<div class="panel anim"><div class="empty">
+  <h4 style="color:var(--dang)">Could not load</h4><p>${esc(m)}</p></div></div>`;
+
+/* All accounts as a flat list, from the tree endpoint. Used wherever a full
+   set is needed (the account pickers below): the plain /accounts/ list is
+   paginated at 100, so a large chart would silently drop leaves from a picker;
+   the tree is unpaginated by contract. */
+async function flattenAccounts() {
+  const d = await api('/api/v1/accounts/tree/');
+  const out = [];
+  (function walk(ns) { (ns || []).forEach(n => { out.push(n); walk(n.children); }); })(
+    (d && d.results) || []);
+  return out;
+}
+
+const sideOf = t => ({ asset: 'debit', expense: 'debit' }[t] || 'credit');
+const sectionLabel = t => ({ asset: 'Assets', liability: 'Liabilities', equity: 'Equity',
+  income: 'Income', expense: 'Expenses' }[t] || t);
+
+VIEWS.accounts = async () => {
+  A(`<button class="btn" onclick="addAccountPrompt()">+ Add account</button>`);
+  await loadChart(false);
+};
+
+async function loadChart(keep) {
+  let data;
+  try { data = await api('/api/v1/accounts/tree/'); }
+  catch (e) { return V(e.status === 403 ? denied() : errPanel(e.message)); }
+  const roots = (data && data.results) || [];
+  CHART.roots = roots;
+  CHART.flat = [];
+  (function walk(ns) { ns.forEach(n => { CHART.flat.push(n); if (n.children) walk(n.children); }); })(roots);
+  if (!keep) { CHART.q = ''; CHART.sel = null; CHART.open = new Set(roots.map(r => r.id)); }
+  else { CHART.open = new Set([...CHART.open].filter(id => CHART.flat.some(a => a.id === id))); }
+  let stats = null;
+  try { stats = await api('/api/v1/accounts/stats/'); } catch { /* the count bar is optional */ }
+  paintChart(stats);
+}
+
+function paintChart(stats) {
+  if (!CHART.roots.length) {
+    return V(`<div class="panel anim"><div class="empty">
+      <h4>Chart of accounts is empty</h4>
+      <p>No accounts have been seeded for this organisation yet.</p></div></div>`);
+  }
+  const lv = (stats && stats.levels) || {};
+  const lvbar = `<div class="lvbar">` +
+    [1, 2, 3, 4, 5].map(n => `<span class="lvchip">L${n} <b>${lv[n] || 0}</b></span>`).join('') +
+    `<span class="lvchip">Total <b>${CHART.flat.length}</b></span></div>`;
+  const tools = `<div class="tools">
+    <input id="chartQ" placeholder="Search code or name…" value="${esc(CHART.q)}"
+      oninput="chartSearch(this.value)" style="min-width:240px">
+    <span class="note" id="chartSel" style="margin:0">${selHint()}</span></div>`;
+  V(lvbar + tools + `<div class="panel anim"><div id="chartTree">${renderTree()}</div></div>`);
+}
+
+function selHint() {
+  if (CHART.sel) {
+    const a = CHART.flat.find(x => x.id === CHART.sel);
+    if (a) return `Selected <b class="mono">${esc(a.code)}</b> — ${esc(a.name)}` +
+      (a.is_postable ? ' (a postable leaf — pick a summary to add beneath)'
+                     : ' · “Add account” adds beneath it');
+  }
+  return 'Click an account to select it; use the ⋯ menu for actions';
+}
+
+/* The tree as flat, indented rows. Rendered from a string rather than nested
+   DOM so search (which prunes whole branches) and toggle are a single rebuild
+   of #chartTree, never a walk of live nodes. Returns an empty-state when a
+   search matches nothing. */
+function renderTree() {
+  const q = CHART.q.trim().toLowerCase();
+  const hit = a => !q || String(a.code).toLowerCase().includes(q) ||
+    String(a.name).toLowerCase().includes(q);
+  function node(a, depth) {
+    const kids = a.children || [];
+    const kidHtml = kids.map(k => node(k, depth + 1)).filter(Boolean).join('');
+    if (!hit(a) && !kidHtml) return '';
+    const hasKids = kids.length > 0;
+    const open = q ? true : CHART.open.has(a.id);
+    const nb = a.normal_balance === 'debit' ? 'debit' : 'credit';
+    const tags =
+      (a.is_postable ? `<span class="tag ${nb === 'debit' ? 't-info' : 't-mut'}">${nb === 'debit' ? 'Debit' : 'Credit'}</span> ` : '') +
+      (a.requires_party ? `<span class="tag t-warn">Party</span> ` : '') +
+      (a.is_active === false ? `<span class="tag t-mut">Archived</span> ` : '') +
+      (a.system_key ? `<span class="tag t-info" title="Wired into automated postings">System</span> ` : '');
+    const row = `<div class="tnode${CHART.sel === a.id ? ' sel' : ''}" data-id="${a.id}"
+        style="padding-left:${12 + depth * 20}px" onclick="chartSelect('${a.id}')">
+      <button class="tchev ${hasKids ? (open ? 'open' : '') : 'leaf'}"
+        onclick="chartToggle(event,'${a.id}')">${hasKids ? '▶' : ''}</button>
+      <span class="tbadge">L${a.level}</span>
+      <span class="tcode mono">${esc(a.code)}</span>
+      <span class="tname ${a.is_postable ? '' : 'sum'}">${esc(a.name)}</span>
+      <span>${tags}</span>
+      <span class="tbal">${a.is_postable ? money(a.cached_balance, C()) : ''}</span>
+      <span class="tact"><button onclick="chartMenu(event,'${a.id}')" title="Actions">⋯</button></span>
+    </div>`;
+    return row + (hasKids ? `<div class="tkids"${open ? '' : ' style="display:none"'}>${kidHtml}</div>` : '');
+  }
+  const body = CHART.roots.map(r => node(r, 0)).filter(Boolean).join('');
+  if (!body) return `<div class="empty"><h4>No accounts match “${esc(CHART.q)}”</h4>
+    <p>Clear the search to see the whole chart.</p></div>`;
+  return `<div class="tree">${body}</div>`;
+}
+
+function refreshTree() {
+  const el = document.getElementById('chartTree');
+  if (el) el.innerHTML = renderTree();
+}
+function chartSearch(v) { CHART.q = v; refreshTree(); }
+function chartToggle(ev, id) {
+  ev.stopPropagation();
+  if (CHART.open.has(id)) CHART.open.delete(id); else CHART.open.add(id);
+  refreshTree();
+}
+function chartSelect(id) {
+  CHART.sel = id;
+  refreshTree();
+  const h = document.getElementById('chartSel');
+  if (h) h.innerHTML = selHint();
+}
+
+/* One popover at a time, appended to <body> and positioned under the trigger.
+   On the body rather than the row so the tree's overflow cannot clip it, and
+   so it survives the #chartTree rebuilds that select/toggle perform. */
+function closeRMenu() { const m = document.getElementById('rmenu'); if (m) m.remove(); }
+function chartMenu(ev, id) {
+  ev.stopPropagation();
+  closeRMenu();
+  const a = CHART.flat.find(x => x.id === id);
+  if (!a) return;
+  const m = document.createElement('div');
+  m.className = 'rmenu'; m.id = 'rmenu';
+  const add = (label, fn, cls) => {
+    const b = document.createElement('button');
+    if (cls) b.className = cls;
+    b.textContent = label;
+    b.onclick = () => { closeRMenu(); fn(); };
+    m.appendChild(b);
+  };
+  if (!a.is_postable) add('Add child account', () => addAccount(a.id));
+  add('Edit name', () => renameAccount(a.id));
+  if (a.is_postable) add('View ledger', () => drillAccount(a.id, a.code + ' — ' + a.name));
+  if (!a.system_key && a.is_active !== false) add('Archive', () => archiveAccount(a.id), 'dang');
+  document.body.appendChild(m);
+  const r = ev.currentTarget.getBoundingClientRect();
+  m.style.top = (r.bottom + 4) + 'px';
+  let left = r.right - 170;
+  if (left < 8) left = 8;
+  m.style.left = left + 'px';
+}
+document.addEventListener('click', e => {
+  if (!document.getElementById('rmenu')) return;
+  if (e.target.closest && (e.target.closest('.rmenu') || e.target.closest('.tact'))) return;
+  closeRMenu();
+});
+
+function addAccountPrompt() {
+  const a = CHART.sel && CHART.flat.find(x => x.id === CHART.sel);
+  if (!a) return toast('Select a summary account first, then add beneath it', 'bad');
+  if (a.is_postable) return toast(`${a.code} is a postable leaf — pick a summary (non-postable) account`, 'bad');
+  addAccount(a.id);
+}
+
+/* Add a child under a summary node. The client sends only the parent, a name
+   and (optionally) the side; the server allocates the code from the account's
+   place in the tree and answers with it. */
+function addAccount(parentId) {
+  const parent = CHART.flat.find(a => a.id === parentId);
+  if (!parent) return;
+  if (parent.is_postable) return toast('A postable leaf cannot have children', 'bad');
+  const childLevel = parent.level + 1;
+  const inherited = sideOf(parent.type);
+  modal(`Add account under ${esc(parent.code)} — ${esc(parent.name)}`, `
+    <div class="row">
+      <div style="grid-column:1/3"><label class="req">Account name</label>
+        <input id="ac_name" placeholder="e.g. Petty cash — head office"></div>
+      <div><label class="req">Normal balance</label>
+        <select id="ac_nb">
+          <option value="">Inherit — ${sectionLabel(parent.type)} (${inherited})</option>
+          <option value="debit">Debit</option>
+          <option value="credit">Credit</option>
+        </select></div>
+      <div><label>Options</label>
+        <label style="display:block;font-weight:400;font-size:12.5px;margin-top:4px">
+          <input type="checkbox" id="ac_party" style="width:auto;margin-right:6px">Requires a party</label>
+        <label style="display:block;font-weight:400;font-size:12.5px;margin-top:6px">
+          <input type="checkbox" id="ac_rec" style="width:auto;margin-right:6px">Reconcilable (bank/cash)</label>
+      </div>
+    </div>
+    <div class="note">The code is allocated by the server — the next free child of
+      ${esc(parent.code)}, at level ${childLevel}. ${childLevel === 5
+        ? 'Level 5 is a postable leaf: postings land here.'
+        : 'This will be a summary account; add postable leaves beneath it.'}</div>`,
+    'Add account', async () => {
+      const name = document.getElementById('ac_name').value.trim();
+      if (!name) return toast('Account name is required', 'bad');
+      const body = { parent: parent.id, name };
+      const nb = document.getElementById('ac_nb').value;
+      if (nb) body.normal_balance_override = nb;
+      if (document.getElementById('ac_party').checked) body.requires_party = true;
+      if (document.getElementById('ac_rec').checked) body.is_reconcilable = true;
+      try {
+        const r = await api('/api/v1/accounts/', { method: 'POST', body: JSON.stringify(body) });
+        closeModal();
+        toast(`Created ${r.code} — ${r.name}`, 'ok');
+        CHART.open.add(parent.id);
+        CHART.sel = r.id;
+        await loadChart(true);
+      } catch (e) { toast(e.message, 'bad'); }
+    });
+}
+
+/* Rename only. Re-parenting is refused server-side (the code encodes the
+   position), so the code and place in the tree are shown as fixed. */
+function renameAccount(id) {
+  const a = CHART.flat.find(x => x.id === id);
+  if (!a) return;
+  modal(`Edit ${esc(a.code)}`, `
+    <div><label class="req">Account name</label><input id="rn_name" value="${esc(a.name)}"></div>
+    <div style="margin-top:12px"><label>Description</label>
+      <input id="rn_desc" value="${esc(a.description || '')}"></div>
+    <div class="note">The code (${esc(a.code)}) and the account's place in the tree
+      do not change — only its name.</div>`,
+    'Save', async () => {
+      const name = document.getElementById('rn_name').value.trim();
+      if (!name) return toast('Account name is required', 'bad');
+      try {
+        await api('/api/v1/accounts/' + id + '/', {
+          method: 'PATCH',
+          body: JSON.stringify({ name, description: document.getElementById('rn_desc').value.trim() }),
+        });
+        closeModal();
+        toast('Saved', 'ok');
+        await loadChart(true);
+      } catch (e) { toast(e.message, 'bad'); }
+    });
+}
+
+/* Archive goes through act(): it confirms, supplies the re-auth proof the
+   sensitive action needs, and is idempotent. The server refuses to archive a
+   system account, one that still carries a balance, or one with active
+   children — the toast carries that message straight through. */
+function archiveAccount(id) {
+  const a = CHART.flat.find(x => x.id === id);
+  if (!a) return;
+  act('accounts', id, 'archive', () => loadChart(true),
+    `Archive ${a.code} — ${a.name}? Nothing further can be posted to it. This is `
+    + `refused if it still carries a balance or has active children.`,
+    { title: 'Archive account', confirmLabel: 'Archive', danger: true });
+}
 VIEWS.taxrates=simple('tax-rates','taxrate',['Code','Tax Name','~Rate','From','Status'],
   t=>`<tr><td class="mono">${esc(t.code)}</td><td>${esc(t.name)}</td>
     <td class="num">${(parseFloat(t.rate)*100).toFixed(2)}%</td>
@@ -2547,6 +2800,7 @@ VIEWS.reports=async()=>{const y=new Date().getFullYear();
          ['balance-sheet','Balance Sheet'],['cash-flow','Cash Flow'],
          ['ar-aging','A/R Ageing'],['ap-aging','A/P Ageing']].map((r,i)=>
         `<button class="btn${i?' sec':''}" onclick="run('${r[0]}','${r[1]}')">${r[1]}</button>`).join('')}
+      <button class="btn sec" onclick="runLedger()">General Ledger</button>
      </div><div id="r_out"><div class="panel anim"><div class="empty"><h4>Pick a report</h4>
      <p>Select a date range and choose a statement above.</p></div></div></div>`);};
 async function run(k,t){const o=document.getElementById('r_out');
@@ -2562,7 +2816,7 @@ async function run(k,t){const o=document.getElementById('r_out');
       <span style="color:var(--mut);font-size:11.5px">${dt(f)} – ${dt(e)}</span></div>`;
     const secs=d.sections||[];
     if(!secs.length)h+=`<div class="empty"><h4>No data for this period</h4></div>`;
-    else{h+=`<table><thead><tr><th>Account</th><th class="num">Amount</th></tr></thead><tbody>`;
+    else{h+=`<div class="rscroll"><table class="rtbl"><thead><tr><th>Account</th><th class="num">Amount</th></tr></thead><tbody>`;
       secs.forEach(s=>{h+=`<tr style="background:var(--panel-2)"><td colspan="2"><b>${esc(s.title||'')}</b></td></tr>`;
         (s.lines||[]).forEach(l=>{
           const lbl=esc(l.label||l.account_name||'');
@@ -2582,7 +2836,7 @@ async function run(k,t){const o=document.getElementById('r_out');
           <td class="num">${money(l.amount??l.value,c)}</td></tr>`;});
         if(s.total!=null)h+=`<tr><td><b>Total ${esc(s.title||'')}</b></td>
           <td class="num"><b>${money(s.total,c)}</b></td></tr>`;});
-      h+=`</tbody></table>`;}
+      h+=`</tbody></table></div>`;}
     const T=d.totals||{};
     if(Object.keys(T).length)h+=`<div style="padding:12px 16px;border-top:1px solid var(--line);
       background:var(--panel-2);font-size:12.5px;display:flex;flex-wrap:wrap;gap:8px 26px">`+
@@ -2592,6 +2846,79 @@ async function run(k,t){const o=document.getElementById('r_out');
   catch(x){if(!document.getElementById('r_out'))return;
     o.innerHTML=`<div class="panel anim"><div class="empty">
     <h4 style="color:var(--dang)">Could not generate</h4><p>${esc(x.message)}</p></div></div>`;}}
+
+/* General ledger — the fourth core statement (G6). Unlike the aggregate
+   statements above it is per-account, so it carries its own account picker
+   while the shared From/To bar still scopes it. The ledger endpoint returns
+   the running balance the report prints, so the browser does no arithmetic. */
+let GL = { sel: null };
+async function runLedger() {
+  const o = document.getElementById('r_out'); if (!o) return;
+  o.innerHTML = skeleton();
+  let accs;
+  try { accs = await flattenAccounts(); }
+  catch (e) { o.innerHTML = errPanel(e.message); return; }
+  const posts = accs.filter(a => a.is_postable && a.is_active !== false);
+  if (!posts.length) {
+    o.innerHTML = `<div class="panel anim"><div class="empty"><h4>No postable accounts</h4>
+      <p>Add postable leaf accounts to the chart first.</p></div></div>`;
+    return;
+  }
+  const cur = posts.some(a => a.id === GL.sel) ? GL.sel : posts[0].id;
+  o.innerHTML = `<div class="tools anim" style="margin-bottom:12px">
+    <label style="margin:0">Account</label>
+    <select id="gl_acct" onchange="glShow(this.value)" style="min-width:300px">
+      ${posts.map(a => `<option value="${a.id}"${a.id === cur ? ' selected' : ''}>${esc(a.code)} — ${esc(a.name)}</option>`).join('')}
+    </select></div><div id="gl_out"></div>`;
+  glShow(cur);
+}
+async function glShow(id) {
+  GL.sel = id;
+  const out = document.getElementById('gl_out'); if (!out) return;
+  out.innerHTML = skeleton();
+  const f = document.getElementById('r_from').value, e = document.getElementById('r_to').value;
+  try {
+    const q = f && e ? `?date_from=${f}&date_to=${e}` : '';
+    const d = await api(`/api/v1/accounts/${id}/ledger/${q}`);
+    if (!document.getElementById('gl_out')) return;
+    const rows = d.results || [];
+    const c = C();
+    const a = d.account || {};
+    let h = `<div class="panel anim"><div class="ph"><h3>${esc(a.code || '')} — ${esc(a.name || '')}</h3>
+      <span style="color:var(--mut);font-size:11.5px">${dt(f)} – ${dt(e)}</span></div>`;
+    if (!rows.length) {
+      h += `<div class="empty"><h4>No posted movement</h4>
+        <p>Nothing hit this account in the selected range.</p></div></div>`;
+      out.innerHTML = h; return;
+    }
+    h += `<div class="rscroll"><table class="rtbl"><thead><tr>
+      <th>Date</th><th>Voucher</th><th>Journal</th><th>Memo</th>
+      <th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th>
+    </tr></thead><tbody>`;
+    if (d.opening_balance != null) h += `<tr><td colspan="6" style="color:var(--mut)">Opening balance</td>
+      <td class="num"><b>${money(d.opening_balance, c)}</b></td></tr>`;
+    rows.forEach(r => {
+      h += `<tr>
+        <td>${dt(r.entry_date)}</td>
+        <td><a href="#" class="mono" onclick="openEntry('${r.entry}');return false"
+          title="Open voucher">${esc(r.entry_number || '—')}</a></td>
+        <td class="mono">${esc(r.journal_code || '')}</td>
+        <td>${esc(r.entry_memo || r.description || '')}</td>
+        <td class="num">${parseFloat(r.debit) > 0 ? money(r.debit, c) : ''}</td>
+        <td class="num">${parseFloat(r.credit) > 0 ? money(r.credit, c) : ''}</td>
+        <td class="num">${money(r.running_balance, c)}</td></tr>`;
+    });
+    if (d.closing_balance != null) h += `<tr><td colspan="6"><b>Closing balance</b></td>
+      <td class="num"><b>${money(d.closing_balance, c)}</b></td></tr>`;
+    h += `</tbody></table></div>`;
+    if (d.next) h += `<div class="note" style="padding:10px 16px 14px">Showing the most recent
+      100 lines in range — narrow the dates to see earlier movement.</div>`;
+    h += `</div>`;
+    out.innerHTML = h;
+  } catch (x) {
+    if (document.getElementById('gl_out')) out.innerHTML = errPanel(x.message);
+  }
+}
 
 /* ── accept-invite deep link + session restore ─────────────────────────── */
 (function(){
@@ -2672,14 +2999,28 @@ function showAccept(token){
 
    Amounts stay strings on the way out. The only arithmetic here is the
    running total, which is display-only and never sent.                      */
-let JE = { accounts: [], journals: [] };
+let JE = { accounts: [], journals: [], parties: [] };
 
 async function newJournal() {
-  const [ac, jr] = await Promise.all([list('accounts'), list('journals')]);
-  const posts = (ac || []).filter(a => a.is_postable && a.is_active);
+  // Accounts come from the tree (all postable leaves, unpaginated) rather than
+  // the 100-row /accounts/ page, so a large chart cannot hide a leaf from the
+  // picker. Parties are loaded so a line on an account that requires one can
+  // name it inline.
+  let ac;
+  try { ac = await flattenAccounts(); }
+  catch (e) { return toast(e.message, 'bad'); }
+  const posts = ac.filter(a => a.is_postable && a.is_active !== false);
   if (!posts.length) return toast('No postable accounts in the chart', 'bad');
+  const [jr, cu, ve, em] = await Promise.all([
+    list('journals'), list('customers'), list('vendors'), list('employees'),
+  ]);
   JE.accounts = posts;
   JE.journals = jr || [];
+  JE.parties = [
+    ...(cu || []).map(p => ({ id: p.id, type: 'customer', label: lbl(p) })),
+    ...(ve || []).map(p => ({ id: p.id, type: 'vendor', label: lbl(p) })),
+    ...(em || []).map(p => ({ id: p.id, type: 'employee', label: lbl(p) })),
+  ];
   if (!JE.journals.length) return toast('No journals configured', 'bad');
   const t = new Date().toISOString().slice(0, 10);
 
@@ -2690,12 +3031,16 @@ async function newJournal() {
       </select></div>
       <div><label class="req">Entry Date</label><input id="j_date" type="date" value="${t}"></div>
       <div><label>Currency</label><input id="j_cur" value="${S.tenant.base_currency}"></div>
-      <div><label>Memo</label><input id="j_memo" placeholder="What this entry records"></div>
+      <div><label>Rate</label><input id="j_rate" class="num" value="1" inputmode="decimal"
+        title="Exchange rate to the base currency — leave at 1 for base-currency entries"></div>
+      <div style="grid-column:1/3"><label>Memo</label>
+        <input id="j_memo" placeholder="What this entry records"></div>
     </div>
     <label style="margin-top:16px">Lines</label>
     <table class="lines"><thead><tr>
-      <th style="width:30%">Account</th><th style="width:28%">Description</th>
-      <th style="width:16%" class="num">Debit</th><th style="width:16%" class="num">Credit</th><th></th>
+      <th style="width:26%">Account</th><th style="width:18%">Party</th>
+      <th style="width:20%">Description</th>
+      <th style="width:15%" class="num">Debit</th><th style="width:15%" class="num">Credit</th><th></th>
     </tr></thead><tbody id="j_lines"></tbody></table>
     <datalist id="j_accs">${JE.accounts.map(a =>
       `<option value="${esc(a.code)} — ${esc(a.name)}">`).join('')}</datalist>
@@ -2720,8 +3065,12 @@ async function newJournal() {
 function jRow() {
   const tb = document.getElementById('j_lines'); if (!tb) return;
   const tr = document.createElement('tr');
+  const partyOpts = '<option value="">—</option>' + JE.parties.map(p =>
+    `<option value="${p.type}:${p.id}">${esc(p.label)} (${p.type[0].toUpperCase()})</option>`).join('');
   tr.innerHTML = `
     <td><input list="j_accs" class="j_acc" placeholder="Code or name"></td>
+    <td><select class="j_party" disabled
+        title="Enabled for accounts that require a party">${partyOpts}</select></td>
     <td><input class="j_desc"></td>
     <td><input class="j_dr num" inputmode="decimal" placeholder="0.00"></td>
     <td><input class="j_cr num" inputmode="decimal" placeholder="0.00"></td>
@@ -2733,8 +3082,23 @@ function jRow() {
     if (e.target.value) tr.querySelector('.j_cr').value = ''; jCalc(); });
   tr.querySelector('.j_cr').addEventListener('input', e => {
     if (e.target.value) tr.querySelector('.j_dr').value = ''; jCalc(); });
-  tr.querySelector('.j_acc').addEventListener('input', jCalc);
+  // The party field only means something once the account is known: an account
+  // that requires a party enables it, any other disables and clears it.
+  tr.querySelector('.j_acc').addEventListener('input', () => { jSyncParty(tr); jCalc(); });
+  tr.querySelector('.j_party').addEventListener('change', jCalc);
   jCalc();
+}
+
+/* Enable a line's party picker only when its account requires one, and flag an
+   account that requires a party while none is chosen. requires_party is not
+   enforced by the server on posting — this is guidance, not a gate. */
+function jSyncParty(tr) {
+  const acc = jAccount(tr.querySelector('.j_acc').value);
+  const sel = tr.querySelector('.j_party');
+  const need = !!(acc && acc.requires_party);
+  sel.disabled = !need;
+  if (!need) sel.value = '';
+  sel.style.borderColor = (need && !sel.value) ? 'var(--warn)' : '';
 }
 
 /* Display-only arithmetic. Deliberately not used for anything that is sent. */
@@ -2758,11 +3122,22 @@ function jCalc() {
   $('j_cr').textContent = cr.toFixed(2);
   $('j_diff').textContent = diff.toFixed(2);
   $('j_diff').className = Math.abs(diff) < 0.005 ? 'pos' : 'neg';
+  const filled = rows.filter(r => {
+    const a = r.querySelector('.j_acc').value.trim();
+    return a || parseFloat(r.querySelector('.j_dr').value) || parseFloat(r.querySelector('.j_cr').value);
+  }).length;
+  const balanced = Math.abs(diff) < 0.005 && dr > 0;
   $('j_hint').textContent = bad
     ? `${bad} row${bad > 1 ? 's have' : ' has'} an unrecognised account.`
-    : Math.abs(diff) < 0.005
+    : balanced
       ? 'Balanced. The server re-checks in decimal before posting.'
-      : `Out of balance by ${Math.abs(diff).toFixed(2)} — ${diff > 0 ? 'credits' : 'debits'} are short.`;
+      : (dr > 0 || cr > 0)
+        ? `Out of balance by ${Math.abs(diff).toFixed(2)} — ${diff > 0 ? 'credits' : 'debits'} are short.`
+        : 'Enter at least two lines that balance.';
+  // Post stays disabled until the entry is postable: two or more lines, every
+  // named account recognised, and debits equal to a non-zero credit total.
+  const postBtn = document.querySelector('#ov .mf .btn');
+  if (postBtn) postBtn.disabled = !(balanced && !bad && filled >= 2);
 }
 
 /* Resolve "1110 — Main bank account", "1110" or "Main bank account". */
@@ -2819,21 +3194,31 @@ async function saveJournal() {
     if (!acc) return toast(`Unknown account: "${accText}"`, 'bad');
     if (d && c) return toast('A line carries one side only, not both', 'bad');
     if (!d && !c) return toast(`Line for ${acc.code} has no amount`, 'bad');
-    lines.push({
+    const line = {
       account: acc.id,
       description: r.querySelector('.j_desc').value.trim(),
       debit: d || '0',
       credit: c || '0',
-    });
+    };
+    // Party, when the account requires one and the row named it.
+    const partyEl = r.querySelector('.j_party');
+    if (partyEl && !partyEl.disabled && partyEl.value) {
+      const [pt, pid] = partyEl.value.split(':');
+      line.partner_type = pt;
+      line.partner_id = pid;
+    }
+    lines.push(line);
   }
   if (lines.length < 2) return toast('An entry needs at least two lines', 'bad');
 
   const journal = JE.journals.find(
     j => j.code === document.getElementById('j_journal').value);
+  const rate = (document.getElementById('j_rate').value || '').trim();
   const body = {
     journal: journal ? journal.id : null,
     entry_date: document.getElementById('j_date').value,
     currency: document.getElementById('j_cur').value.trim().toUpperCase(),
+    exchange_rate: rate || '1',
     memo: document.getElementById('j_memo').value.trim(),
     lines,
   };

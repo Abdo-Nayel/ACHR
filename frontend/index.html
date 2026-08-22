@@ -329,6 +329,47 @@ tbody tr:hover{background:var(--panel-2)}
   display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;
   font-weight:650;margin-right:9px;flex-shrink:0}
 .uc{display:flex;align-items:center}
+/* ── chart of accounts tree ──
+   A positional chart is a hierarchy carried in the code; a flat table hides
+   it. Each node is an indented flex row inside a .tkids wrapper a chevron
+   shows or hides, so a search can prune branches without rebuilding a tree of
+   <ul>s and expand/collapse is a single class toggle. */
+.tree{border:1px solid var(--line);border-radius:var(--r);background:var(--panel);min-width:560px}
+.tnode{display:flex;align-items:center;gap:9px;padding:8px 12px;font-size:13px;
+  border-bottom:1px solid var(--line-soft);transition:background .12s;cursor:pointer}
+.tnode:last-child{border-bottom:0}
+.tnode:hover{background:var(--panel-2)}
+.tnode.sel{background:var(--acc-l)}
+.tchev{width:18px;height:18px;flex-shrink:0;display:inline-flex;align-items:center;
+  justify-content:center;border:0;background:0;color:var(--mut);cursor:pointer;font-size:9px;
+  border-radius:5px;transition:transform .15s,color .15s,background .15s}
+.tchev.open{transform:rotate(90deg)}
+.tchev:hover{color:var(--fg);background:var(--panel-3)}
+.tchev.leaf{visibility:hidden;cursor:default}
+.tbadge{flex-shrink:0;font-size:9.5px;font-weight:700;color:var(--mut);background:var(--panel-3);
+  border-radius:5px;padding:1px 5px;letter-spacing:.03em}
+.tcode{flex-shrink:0;min-width:92px}
+.tname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg-2)}
+.tname.sum{font-weight:650;color:var(--fg)}
+.tbal{flex-shrink:0;min-width:104px;text-align:right;font-variant-numeric:tabular-nums;color:var(--fg-2)}
+.tact{flex-shrink:0;line-height:1}
+.tact>button{border:0;background:0;color:var(--mut);cursor:pointer;font-size:17px;line-height:1;
+  padding:0 6px;border-radius:6px}
+.tact>button:hover{color:var(--fg);background:var(--panel-3)}
+.rmenu{position:fixed;z-index:60;min-width:160px;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--r-sm);box-shadow:var(--sh2);padding:5px;animation:pop .15s both}
+.rmenu button{display:block;width:100%;text-align:left;border:0;background:0;color:var(--fg-2);
+  font-size:12.5px;padding:7px 10px;border-radius:6px;cursor:pointer;transition:background .12s,color .12s}
+.rmenu button:hover{background:var(--panel-2);color:var(--acc)}
+.rmenu button.dang:hover{background:var(--dang-bg);color:var(--dang)}
+.lvbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.lvchip{font-size:11px;color:var(--mut);background:var(--panel-2);border:1px solid var(--line);
+  border-radius:20px;padding:4px 11px;white-space:nowrap}
+.lvchip b{color:var(--fg);font-weight:650}
+/* Report + ledger tables: a scroll box whose header stays put while the body
+   scrolls, so a long trial balance keeps its column labels in view. */
+.rscroll{max-height:62vh;overflow:auto;border-radius:var(--r)}
+.rscroll thead th{position:sticky;top:0;z-index:2}
 
 /* ── attachments ── */
 .drop{border:1.5px dashed var(--field-line);border-radius:var(--r);padding:18px;

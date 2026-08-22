@@ -104,6 +104,25 @@ class ReportDefinitionSerializer(TenantScopedSerializer):
             "updated_at",
         )
 
+    def validate_report_type(self, value: str) -> str:
+        """Reject a report type that has no generator.
+
+        ``ReportType`` still lists ``general_ledger`` and ``expense_by_category``
+        for the roadmap, but no generator is registered for them yet. Saving a
+        definition (and scheduling it) for one used to fail only later, inside
+        the Celery run, as an uninformative ``last_error``. Refuse it here with a
+        clear 400 instead — you cannot save a report the engine cannot produce.
+        """
+        from apps.reporting.generators.base import registered_reports
+
+        available = registered_reports()
+        if value not in available:
+            raise serializers.ValidationError(
+                f"No report generator is available for '{value}'. "
+                f"Available: {', '.join(sorted(available))}."
+            )
+        return value
+
 
 class ReportSnapshotSerializer(ReadOnlyModelSerializer):
     """A frozen rendering of a report, with the checksum that proves it intact."""

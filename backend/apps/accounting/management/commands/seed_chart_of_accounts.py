@@ -66,14 +66,21 @@ created per role, carrying the literal the engine passes, and
 older revision already carries an alias key, the command **re-keys that
 account in place** rather than creating a duplicate; no balance moves.
 
+The chart itself
+----------------
+One English, 5-level, positionally-coded tree, defined in
+``apps.accounting.chart.english_chart`` (ported from the reference GL's Egyptian
+starter template and extended with the roles above). ``--country`` is still
+accepted for backward compatibility but no longer branches the layout.
+
 Idempotency
 -----------
-Everything is ``update_or_create``-shaped and keyed on ``(tenant, code)`` for
-accounts, ``(tenant, code)`` for journals and ``(tenant, start_date)`` for
-periods — the same natural keys their unique constraints use. Re-running the
-command is a no-op apart from refreshing names, and it never touches
-``cached_balance``, ``is_active`` on an account a tenant has archived, or a
-period whose status has moved away from OPEN.
+The chart is keyed on ``(tenant, full_code)`` — an account's full code is fixed
+by its place in the tree — and journals/periods on ``(tenant, code)`` /
+``(tenant, start_date)``, the natural keys their unique constraints use.
+Re-running refreshes names/roles only; it never touches ``cached_balance``,
+``is_active`` on an account a tenant has archived, or a period whose status has
+moved away from OPEN.
 
 The whole run is one ``transaction.atomic`` block: a chart that is half
 seeded is worse than one that is absent, because the missing half only
@@ -84,13 +91,15 @@ from __future__ import annotations
 
 import calendar
 import uuid
-from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import Optional
 
 from django.core.management.base import BaseCommand, CommandError
 
-from apps.accounting.models import Account, AccountType, FiscalPeriod, FiscalYear, Journal
+from apps.accounting.chart.english_chart import (
+    build_default_chart,
+    required_system_keys,
+)
+from apps.accounting.models import Account, FiscalPeriod, FiscalYear, Journal
 from apps.core.tenancy_context import tenant_context
 from apps.tenancy.models import Tenant
 
@@ -109,207 +118,6 @@ SYSTEM_KEY_ALIASES: dict[str, str] = {
     "employer_si_expense": "payroll_employer_social_insurance_expense",
 }
 
-
-@dataclass(frozen=True, slots=True)
-class AccountSpec:
-    """One node of the seeded chart.
-
-    ``ref`` is an internal identifier used to wire parents together; it is not
-    written to the database. ``system_key`` is written and is what automated
-    postings resolve. Structural (header/group) nodes carry an empty
-    ``system_key`` and ``is_postable=False`` — posting to a roll-up makes its
-    balance ambiguous, which is why ``Account.is_postable`` exists.
-    """
-
-    ref: str
-    name: str
-    type: str
-    codes: dict[str, str]
-    parent_ref: Optional[str] = None
-    system_key: str = ""
-    is_postable: bool = True
-    is_reconcilable: bool = False
-    #: Arabic label, stored in ``description`` for the EG chart.
-    name_ar: str = ""
-    aliases: tuple[str, ...] = field(default_factory=tuple)
-
-    def code_for(self, country: str) -> str:
-        return self.codes.get(country) or self.codes["GENERIC"]
-
-
-def _c(generic: str, eg: str) -> dict[str, str]:
-    return {"GENERIC": generic, "EG": eg}
-
-
-#: The chart itself: header (non-postable) -> group (non-postable) -> detail
-#: (postable), three levels, exactly as ``docs/03-data-model.md`` §5.2
-#: prescribes. Order matters only in that a parent must precede its children.
-CHART: tuple[AccountSpec, ...] = (
-    # --- 1 Assets ---------------------------------------------------------
-    AccountSpec("hdr_assets", "Assets", AccountType.ASSET, _c("1000", "1"),
-                is_postable=False, name_ar="الأصول"),
-    # Carries a system_key even though it is a structural node: the
-    # current/non-current split is a *fact about the chart* that
-    # apps.reporting.services.kpis needs to compute working capital and the
-    # quick ratio, and code ranges differ per national chart — which is the
-    # whole reason system_key exists. It stays is_postable=False.
-    AccountSpec("grp_current_assets", "Current assets", AccountType.ASSET,
-                _c("1100", "11"), parent_ref="hdr_assets", is_postable=False,
-                system_key="grp_current_assets",
-                name_ar="الأصول المتداولة"),
-    AccountSpec("bank_main", "Main bank account", AccountType.ASSET,
-                _c("1110", "1110"), parent_ref="grp_current_assets",
-                system_key="bank_main", is_reconcilable=True,
-                name_ar="البنك — الحساب الجاري"),
-    AccountSpec("cash_on_hand", "Cash on hand", AccountType.ASSET,
-                _c("1120", "1120"), parent_ref="grp_current_assets",
-                system_key="cash_on_hand", is_reconcilable=True,
-                name_ar="النقدية بالخزينة"),
-    AccountSpec("gateway_clearing", "Payment gateway clearing", AccountType.ASSET,
-                _c("1130", "1130"), parent_ref="grp_current_assets",
-                system_key="gateway_clearing", name_ar="حساب تسوية بوابات الدفع"),
-    AccountSpec("ar_control", "Accounts receivable (control)", AccountType.ASSET,
-                _c("1200", "1210"), parent_ref="grp_current_assets",
-                system_key="ar_control", name_ar="العملاء"),
-    AccountSpec("inventory_asset", "Inventory", AccountType.ASSET,
-                _c("1300", "1310"), parent_ref="grp_current_assets",
-                system_key="inventory_asset", name_ar="المخزون"),
-    AccountSpec("work_in_progress", "Work in progress", AccountType.ASSET,
-                _c("1350", "1320"), parent_ref="grp_current_assets",
-                system_key="work_in_progress", name_ar="إنتاج تحت التشغيل"),
-    AccountSpec("input_vat", "Input VAT (recoverable)", AccountType.ASSET,
-                _c("1400", "1410"), parent_ref="grp_current_assets",
-                system_key="input_vat", name_ar="ضريبة القيمة المضافة — مشتريات"),
-
-    # --- 2 Liabilities ----------------------------------------------------
-    AccountSpec("hdr_liabilities", "Liabilities", AccountType.LIABILITY,
-                _c("2000", "2"), is_postable=False, name_ar="الالتزامات"),
-    AccountSpec("grp_current_liabilities", "Current liabilities",
-                AccountType.LIABILITY, _c("2100", "21"),
-                parent_ref="hdr_liabilities", is_postable=False,
-                system_key="grp_current_liabilities",
-                name_ar="الالتزامات المتداولة"),
-    AccountSpec("ap_control", "Accounts payable (control)", AccountType.LIABILITY,
-                _c("2110", "2110"), parent_ref="grp_current_liabilities",
-                system_key="ap_control", name_ar="الموردون"),
-    AccountSpec("output_vat", "Output VAT (collected)", AccountType.LIABILITY,
-                _c("2200", "2210"), parent_ref="grp_current_liabilities",
-                system_key="output_vat", name_ar="ضريبة القيمة المضافة — مبيعات"),
-    AccountSpec("grp_payroll_liabilities", "Payroll liabilities",
-                AccountType.LIABILITY, _c("2300", "23"),
-                parent_ref="hdr_liabilities", is_postable=False,
-                name_ar="التزامات الأجور"),
-    AccountSpec("payroll_salaries_payable", "Salaries payable",
-                AccountType.LIABILITY, _c("2310", "2310"),
-                parent_ref="grp_payroll_liabilities",
-                system_key="payroll_salaries_payable",
-                aliases=("salaries_payable",), name_ar="أجور مستحقة"),
-    AccountSpec("payroll_income_tax_payable", "Income tax payable",
-                AccountType.LIABILITY, _c("2320", "2320"),
-                parent_ref="grp_payroll_liabilities",
-                system_key="payroll_income_tax_payable",
-                aliases=("income_tax_payable",), name_ar="ضريبة كسب العمل المستحقة"),
-    AccountSpec("payroll_social_insurance_payable", "Social insurance payable",
-                AccountType.LIABILITY, _c("2330", "2330"),
-                parent_ref="grp_payroll_liabilities",
-                system_key="payroll_social_insurance_payable",
-                aliases=("social_insurance_payable",),
-                name_ar="التأمينات الاجتماعية المستحقة"),
-    AccountSpec("payroll_other_deductions_payable", "Other payroll deductions payable",
-                AccountType.LIABILITY, _c("2340", "2340"),
-                parent_ref="grp_payroll_liabilities",
-                system_key="payroll_other_deductions_payable",
-                aliases=("other_deductions_payable",), name_ar="استقطاعات أخرى مستحقة"),
-    # Money owed to staff for expenses they paid out of their own pocket.
-    # Deliberately its own account rather than folded into salaries payable:
-    # the two settle on different cycles (payroll runs monthly, expense
-    # reimbursements when finance processes them) and a single balance that
-    # mixes them cannot be reconciled against either. Read by
-    # ``apps.expenses.services.posting``.
-    AccountSpec("employee_reimbursements_payable", "Employee reimbursements payable",
-                AccountType.LIABILITY, _c("2350", "2350"),
-                parent_ref="grp_payroll_liabilities",
-                system_key="employee_reimbursements_payable",
-                name_ar="مصروفات مستحقة للموظفين"),
-
-    # --- 3 Equity ---------------------------------------------------------
-    AccountSpec("hdr_equity", "Equity", AccountType.EQUITY, _c("3000", "3"),
-                is_postable=False, name_ar="حقوق الملكية"),
-    AccountSpec("share_capital", "Share capital", AccountType.EQUITY,
-                _c("3100", "3110"), parent_ref="hdr_equity",
-                system_key="share_capital", name_ar="رأس المال"),
-    AccountSpec("retained_earnings", "Retained earnings", AccountType.EQUITY,
-                _c("3200", "3210"), parent_ref="hdr_equity",
-                system_key="retained_earnings", name_ar="الأرباح المرحلة"),
-    AccountSpec("opening_balance_equity", "Opening balance equity",
-                AccountType.EQUITY, _c("3900", "3910"), parent_ref="hdr_equity",
-                system_key="opening_balance_equity", name_ar="أرصدة افتتاحية"),
-
-    # --- 4 Income ---------------------------------------------------------
-    AccountSpec("hdr_income", "Income", AccountType.INCOME, _c("4000", "4"),
-                is_postable=False, name_ar="الإيرادات"),
-    AccountSpec("sales_revenue", "Sales revenue", AccountType.INCOME,
-                _c("4100", "4110"), parent_ref="hdr_income",
-                system_key="sales_revenue", name_ar="إيرادات المبيعات"),
-    AccountSpec("service_revenue", "Service revenue", AccountType.INCOME,
-                _c("4200", "4120"), parent_ref="hdr_income",
-                system_key="service_revenue", name_ar="إيرادات الخدمات"),
-    # Contra-revenue: debited, deliberately typed INCOME so the P&L nets it
-    # against gross sales instead of inflating operating expenses.
-    AccountSpec("sales_discount", "Sales discounts (contra-revenue)",
-                AccountType.INCOME, _c("4900", "4190"), parent_ref="hdr_income",
-                system_key="sales_discount", name_ar="خصم مسموح به"),
-
-    # --- 5 Cost of sales --------------------------------------------------
-    AccountSpec("hdr_cost_of_sales", "Cost of sales", AccountType.EXPENSE,
-                _c("5000", "5"), is_postable=False, name_ar="تكلفة المبيعات"),
-    AccountSpec("cogs", "Cost of goods sold", AccountType.EXPENSE,
-                _c("5100", "5110"), parent_ref="hdr_cost_of_sales",
-                system_key="cogs", name_ar="تكلفة البضاعة المباعة"),
-    AccountSpec("inventory_adjustment", "Inventory adjustment (shrinkage / gain)",
-                AccountType.EXPENSE, _c("5200", "5120"),
-                parent_ref="hdr_cost_of_sales", system_key="inventory_adjustment",
-                name_ar="تسويات المخزون"),
-
-    # --- 6 Operating expenses --------------------------------------------
-    AccountSpec("hdr_operating_expenses", "Operating expenses", AccountType.EXPENSE,
-                _c("6000", "6"), is_postable=False, name_ar="المصروفات التشغيلية"),
-    AccountSpec("grp_payroll_expenses", "Payroll expenses", AccountType.EXPENSE,
-                _c("6100", "61"), parent_ref="hdr_operating_expenses",
-                is_postable=False, name_ar="مصروفات الأجور"),
-    AccountSpec("payroll_salary_expense", "Salaries and wages", AccountType.EXPENSE,
-                _c("6110", "6110"), parent_ref="grp_payroll_expenses",
-                system_key="payroll_salary_expense", name_ar="الأجور والمرتبات"),
-    AccountSpec("payroll_employer_social_insurance_expense",
-                "Employer social insurance contribution", AccountType.EXPENSE,
-                _c("6120", "6120"), parent_ref="grp_payroll_expenses",
-                system_key="payroll_employer_social_insurance_expense",
-                aliases=("employer_si_expense",),
-                name_ar="حصة صاحب العمل في التأمينات"),
-    AccountSpec("grp_admin_expenses", "General and administrative",
-                AccountType.EXPENSE, _c("6500", "65"),
-                parent_ref="hdr_operating_expenses", is_postable=False,
-                name_ar="مصروفات عمومية وإدارية"),
-    AccountSpec("bad_debt_expense", "Bad debt expense", AccountType.EXPENSE,
-                _c("6510", "6510"), parent_ref="grp_admin_expenses",
-                system_key="bad_debt_expense", name_ar="ديون معدومة"),
-    AccountSpec("bank_fees", "Bank and payment processing fees", AccountType.EXPENSE,
-                _c("6520", "6520"), parent_ref="grp_admin_expenses",
-                system_key="bank_fees", name_ar="مصروفات بنكية"),
-    AccountSpec("office_expense", "Office and general expense", AccountType.EXPENSE,
-                _c("6530", "6530"), parent_ref="grp_admin_expenses",
-                system_key="office_expense", name_ar="مصروفات مكتبية"),
-
-    # --- 8 Other income and expense --------------------------------------
-    AccountSpec("hdr_other", "Other income and expense", AccountType.INCOME,
-                _c("8000", "8"), is_postable=False, name_ar="إيرادات ومصروفات أخرى"),
-    # One account carrying both directions: a separate gain and loss pair
-    # makes the net FX result a two-account subtraction on every report, and
-    # the two are the same economic event measured on different days.
-    AccountSpec("fx_gain_loss", "Foreign exchange gain / (loss)", AccountType.INCOME,
-                _c("8100", "8110"), parent_ref="hdr_other",
-                system_key="fx_gain_loss", name_ar="فروق عملة"),
-)
 
 #: ``(code, name, kind, sequence_prefix)``. The codes are the ones services
 #: hard-code: ``invoice_workflow.SALES_JOURNAL_CODE == "SAL"``, and the
@@ -462,50 +270,16 @@ class Command(BaseCommand):
     def _seed_accounts(
         self, tenant: Tenant, country: str
     ) -> tuple[dict[str, Account], int, int]:
-        by_ref: dict[str, Account] = {}
-        created = updated = 0
+        """Build the default English 5-level coded chart.
 
-        for spec in CHART:
-            code = spec.code_for(country)
-            parent = by_ref[spec.parent_ref] if spec.parent_ref else None
-            defaults = {
-                "name": spec.name,
-                "type": spec.type,
-                "parent": parent,
-                "system_key": spec.system_key,
-                "is_postable": spec.is_postable,
-                "is_reconcilable": spec.is_reconcilable,
-                "description": spec.name_ar if country == "EG" else "",
-            }
-            account = Account.all_tenants.filter(
-                tenant_id=tenant.id, code=code
-            ).first()
-            if account is None:
-                # An earlier run may have used a different chart layout; match
-                # on the role before deciding it is missing.
-                if spec.system_key:
-                    account = Account.all_tenants.filter(
-                        tenant_id=tenant.id, system_key=spec.system_key
-                    ).first()
-
-            if account is None:
-                account = Account(tenant=tenant, code=code, **defaults)
-                account.save()
-                created += 1
-            else:
-                account.code = code
-                for name, value in defaults.items():
-                    setattr(account, name, value)
-                # ``is_active`` and ``cached_balance`` are deliberately absent
-                # from ``defaults``: a tenant who archived an account they do
-                # not use must not have it resurrected by a re-run, and a
-                # balance is never rewritten by anything but the posting
-                # service.
-                account.save(update_fields=["code", *defaults.keys(), "updated_at"])
-                updated += 1
-            by_ref[spec.ref] = account
-
-        return by_ref, created, updated
+        ``country`` is accepted for backward compatibility but no longer
+        branches the layout: the chart is one English, positionally-coded tree
+        (``apps.accounting.chart.english_chart``). The returned dict is keyed by
+        ``system_key`` so :meth:`_seed_journals` can wire default accounts by
+        role.
+        """
+        counts, by_key = build_default_chart(tenant.id)
+        return by_key, counts["created"], counts["updated"]
 
     def _seed_journals(
         self, tenant: Tenant, accounts: dict[str, Account]
@@ -573,7 +347,7 @@ class Command(BaseCommand):
         Provisioning that "mostly" succeeded is how a tenant discovers at
         month-end that payroll cannot post.
         """
-        required = {spec.system_key for spec in CHART if spec.system_key}
+        required = required_system_keys()
         present = set(
             Account.all_tenants.filter(tenant_id=tenant.id)
             .exclude(system_key="")
@@ -599,7 +373,7 @@ class Command(BaseCommand):
             write(self.style.WARNING(f"  re-keyed alias  {line}"))
         write(f"  accounts   created {ctx['created_accounts']:>3}  "
               f"updated {ctx['updated_accounts']:>3}  "
-              f"total {len(CHART):>3}")
+              f"total {ctx['created_accounts'] + ctx['updated_accounts']:>3}")
         write(f"  journals   created {ctx['created_journals']:>3}  "
               f"updated {ctx['updated_journals']:>3}")
         if ctx["fiscal_year"] is not None:
@@ -609,6 +383,6 @@ class Command(BaseCommand):
         else:
             write("  calendar   skipped (--skip-calendar)")
         write(self.style.SUCCESS(
-            f"  system keys {len([s for s in CHART if s.system_key])} present; "
+            f"  system keys {len(required_system_keys())} present; "
             f"the ledger is postable."
         ))

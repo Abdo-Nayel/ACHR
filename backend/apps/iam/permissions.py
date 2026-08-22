@@ -3,9 +3,9 @@ The guard layer: tenant resolution, RBAC, ABAC and re-authentication.
 
 Every request passes three independent gates before it can touch a row.
 
-1. :class:`TenantResolutionMiddleware` establishes *which tenant* — binding
-   the ``ContextVar`` that ``TenantManager`` reads and the PostgreSQL session
-   variable that Row-Level Security reads.
+1. ``apps.tenancy.middleware.TenantMiddleware`` establishes *which tenant* —
+   binding the ``ContextVar`` that ``TenantManager`` reads and the PostgreSQL
+   session variable that Row-Level Security reads.
 2. :class:`HasPermission` answers *may this actor do this at all* from the
    role's ``Permission.codename`` set (RBAC).
 3. :class:`ScopedQuerysetMixin` / :class:`ObjectPermissionMixin` answer
@@ -24,22 +24,24 @@ from __future__ import annotations
 import functools
 import logging
 import uuid
-from dataclasses import dataclass, field
-from typing import Any, Iterable, Optional, Sequence
+from typing import Any, Optional, Sequence
 
 from django.core.cache import caches
-from django.db import transaction
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 from rest_framework import permissions as drf_permissions
 from rest_framework.exceptions import APIException, NotFound, PermissionDenied
 
 from apps.core.tenancy_context import (
-    _current_tenant_id,
-    _current_user_id,
-    bind_database_session,
     get_current_tenant_id,
-    get_current_user_id,
+)
+from apps.iam.services.abac import (  # noqa: F401 (re-exported for callers)
+    DENY_ALL,
+    SCOPE_FIELDS,
+    ActorScope,
+    ScopeFields,
+    build_scope_q,
+    resolve_actor_scope,
 )
 
 logger = logging.getLogger(__name__)
@@ -122,196 +124,9 @@ def _cache():
     except Exception:  # pragma: no cover - misconfigured alias in dev
         return caches["default"]
 
-
-# ---------------------------------------------------------------------------
-# Tenant resolution middleware
-# ---------------------------------------------------------------------------
-
-class TenantResolutionMiddleware:
-    """Resolve the tenant, validate membership, bind context, always unbind.
-
-    Resolution order — **the JWT claim wins, then the header, then the host**:
-
-    1. ``request.auth["tid"]`` — the tenant the access token was minted for.
-    2. ``X-Tenant-ID`` — must *match* the claim if a claim exists; it may only
-       select a tenant when the token is tenant-agnostic (API keys, the
-       tenant-switch endpoint).
-    3. The ``Host`` header, matched against ``Tenant.slug`` or a verified
-       ``TenantDomain``.
-
-    Reversing 1 and 2 is the classic multi-tenant break: an attacker with a
-    valid token for tenant A sets ``X-Tenant-ID: <B>`` and, if the header is
-    trusted first, the whole request runs bound to B. The claim is signed; the
-    header is not. The header exists only because a browser cannot set a
-    sub-domain on an XHR to an apex API host, and because sub-domain routing
-    breaks under corporate proxies that rewrite ``Host``.
-    """
-
-    def __init__(self, get_response):
-        self.get_response = get_response
-
-    def __call__(self, request):
-        tenant = None
-        membership = None
-        try:
-            tenant = self.resolve_tenant(request)
-            if tenant is not None:
-                membership = self.resolve_membership(request, tenant)
-                self.assert_tenant_usable(request, tenant)
-
-                request.tenant = tenant
-                request.membership = membership
-
-                _current_tenant_id.set(tenant.id)
-                _current_user_id.set(getattr(request.user, "id", None))
-
-                # bind_database_session issues SET LOCAL, which is scoped to
-                # the *transaction*. Outside one it is a no-op that silently
-                # leaves RLS unbound, so the atomic block is load-bearing.
-                with transaction.atomic():
-                    bind_database_session(tenant.id)
-                    return self.get_response(request)
-
-            return self.get_response(request)
-        finally:
-            # NOT optional, and not merely tidy.
-            #
-            # gunicorn/uvicorn workers are pooled and long-lived. A ContextVar
-            # set on request N and not reset is still set when request N+1
-            # arrives on the same worker. If N+1 is unauthenticated, or is a
-            # health check, or fails tenant resolution and returns early, its
-            # ORM queries inherit tenant N and TenantManager happily filters
-            # to *someone else's* tenant. The failure is invisible in tests
-            # (one request per process) and catastrophic in production.
-            #
-            # It must be `finally`, not a line after get_response: an
-            # exception, a DisallowedHost, or a middleware short-circuit above
-            # us all skip the happy path while leaving the context set.
-            _current_tenant_id.set(None)
-            _current_user_id.set(None)
-
-    # -- resolution steps ---------------------------------------------------
-
-    def resolve_tenant(self, request):
-        from apps.tenancy.models import Tenant, TenantDomain
-
-        claim_tid = self._claim_tenant_id(request)
-        header_tid = self._parse_uuid(request.META.get(TENANT_HEADER))
-
-        if claim_tid is not None:
-            if header_tid is not None and header_tid != claim_tid:
-                # Do not silently prefer one. A mismatch is either a bug in
-                # the client or an attempt; both deserve a 400 and a log line.
-                logger.warning(
-                    "tenant header/claim mismatch: header=%s claim=%s user=%s",
-                    header_tid, claim_tid, getattr(request.user, "id", None),
-                )
-                raise TenantResolutionError("X-Tenant-ID does not match the access token.")
-            return Tenant.objects.filter(pk=claim_tid).first()
-
-        if header_tid is not None:
-            return Tenant.objects.filter(pk=header_tid).first()
-
-        host = (request.get_host() or "").split(":")[0].lower()
-        domain = (
-            TenantDomain.objects.select_related("tenant")
-            .filter(domain=host, verified_at__isnull=False)
-            .first()
-        )
-        if domain is not None:
-            return domain.tenant
-
-        label = host.split(".")[0]
-        if label and label not in {"www", "api", "app", "localhost"}:
-            return Tenant.objects.filter(slug=label).first()
-        return None
-
-    def resolve_membership(self, request, tenant):
-        """A signed claim is not authorisation. Membership is re-read per request.
-
-        ``TenantMembership.is_active`` can flip to False the moment someone is
-        fired; a 15-minute access token minted before that must stop working
-        now, not in 15 minutes.
-        """
-        from apps.iam.models import TenantMembership
-
-        user = getattr(request, "user", None)
-        if user is None or not getattr(user, "is_authenticated", False):
-            return None
-
-        membership = (
-            TenantMembership.objects.select_related("employee")
-            .filter(tenant_id=tenant.id, user_id=user.id, is_active=True)
-            .first()
-        )
-        if membership is None:
-            if getattr(user, "is_platform_admin", False):
-                # Platform admins are *not* implicitly members. They must
-                # enter platform_admin_context() explicitly, which audit-logs.
-                return None
-            # 404, not 403: confirming that a tenant exists to a non-member is
-            # itself a leak (it discloses your competitor is a customer).
-            raise NotFound("No such workspace.")
-        return membership
-
-    def assert_tenant_usable(self, request, tenant) -> None:
-        """SUSPENDED/CLOSED tenants are readable but not writable.
-
-        ``Tenant.is_operational`` deliberately keeps PAST_DUE writable-adjacent
-        so a customer in arrears can always export their own books — locking
-        someone out of their accounting records over an invoice dispute is
-        both a support incident and, in several jurisdictions, unlawful.
-        """
-        if request.method in drf_permissions.SAFE_METHODS:
-            return
-        if not tenant.is_operational:
-            raise TenantSuspended()
-
-    # -- helpers ------------------------------------------------------------
-
-    @staticmethod
-    def _claim_tenant_id(request):
-        auth = getattr(request, "auth", None)
-        if isinstance(auth, dict):
-            return TenantResolutionMiddleware._parse_uuid(auth.get("tid"))
-        return TenantResolutionMiddleware._parse_uuid(getattr(auth, "get", lambda *_: None)("tid"))
-
-    @staticmethod
-    def _parse_uuid(value) -> Optional[uuid.UUID]:
-        if not value:
-            return None
-        try:
-            return uuid.UUID(str(value))
-        except (ValueError, AttributeError, TypeError):
-            return None
-
-
 # ---------------------------------------------------------------------------
 # Effective permissions
 # ---------------------------------------------------------------------------
-
-@dataclass(frozen=True, slots=True)
-class ActorScope:
-    """Everything ``build_scope_q`` needs, resolved once per request."""
-
-    user_id: Optional[uuid.UUID] = None
-    employee_id: Optional[uuid.UUID] = None
-    department_id: Optional[uuid.UUID] = None
-    #: Materialised org-chart path of the actor's own department, e.g.
-    #: ``/8f1c…/2b90…/``. Prefix-matched for ``department_subtree``.
-    department_path: str = ""
-    project_ids: tuple[uuid.UUID, ...] = ()
-    #: Paths of the departments named on the actor's RoleAssignments.
-    #: Drives ``scoped_department`` — note the plural: one person can hold the
-    #: same role twice for two branches.
-    assigned_department_paths: tuple[str, ...] = ()
-    #: resource -> {"strategy": str, "parameters": dict}
-    rules: dict[str, dict[str, Any]] = field(default_factory=dict)
-    #: Most authoritative rank the actor holds (lowest number wins). 0 is the
-    #: tenant Owner. Read by ``build_scope_q`` to decide what a *missing*
-    #: scope rule means.
-    rank: Optional[int] = None
-
 
 def _load_effective_permissions(tenant_id, user_id) -> dict[str, Any]:
     """Read the permission set and scope rules straight from the database."""
@@ -477,13 +292,13 @@ def register_cache_invalidation() -> None:
 
 
 def user_permission_set(request) -> frozenset[str]:
-    tenant_id = getattr(getattr(request, "tenant", None), "id", None) or get_current_tenant_id()
+    tenant_id = getattr(request, "tenant_id", None) or get_current_tenant_id()
     user_id = getattr(getattr(request, "user", None), "id", None)
     return frozenset(effective_permissions(tenant_id, user_id)["permissions"])
 
 
 def actor_rank(request) -> Optional[int]:
-    tenant_id = getattr(getattr(request, "tenant", None), "id", None) or get_current_tenant_id()
+    tenant_id = getattr(request, "tenant_id", None) or get_current_tenant_id()
     user_id = getattr(getattr(request, "user", None), "id", None)
     return effective_permissions(tenant_id, user_id)["rank"]
 
@@ -582,352 +397,6 @@ def is_sensitive(codename: str) -> bool:
     from apps.iam.models import Permission
 
     return Permission.objects.filter(codename=codename, is_sensitive=True).exists()
-
-
-# ---------------------------------------------------------------------------
-# ABAC
-# ---------------------------------------------------------------------------
-
-@dataclass(frozen=True, slots=True)
-class ScopeFields:
-    """How a resource's model spells the columns the strategies need."""
-
-    owner: str = "created_by_id"
-    employee: Optional[str] = None
-    department: Optional[str] = None
-    project: Optional[str] = None
-    manager: Optional[str] = None
-
-
-#: Resource name (matching ``ScopeRule.resource``) -> field spelling.
-#: A resource missing from this map cannot be scoped, and
-#: :func:`build_scope_q` therefore denies it. Fail closed: a new model whose
-#: author forgot to register it returns nothing rather than everything.
-SCOPE_FIELDS: dict[str, ScopeFields] = {
-    "employee": ScopeFields(
-        owner="id", employee="id", department="department", manager="manager_id"
-    ),
-    "department": ScopeFields(owner="id", department="id"),
-    "payslip": ScopeFields(
-        employee="employee_id", department="employee__department",
-        manager="employee__manager_id",
-    ),
-    "payroll_run": ScopeFields(owner="created_by_id"),
-    "leave_request": ScopeFields(
-        employee="employee_id", department="employee__department",
-        manager="employee__manager_id",
-    ),
-    "leave_balance": ScopeFields(
-        employee="employee_id", department="employee__department",
-        manager="employee__manager_id",
-    ),
-    "attendance": ScopeFields(
-        employee="employee_id", department="employee__department",
-        manager="employee__manager_id",
-    ),
-    "document": ScopeFields(
-        employee="employee_id", department="employee__department",
-        manager="employee__manager_id",
-    ),
-    "expense": ScopeFields(
-        owner="created_by_id", employee="employee_id",
-        department="department", project="project_id", manager="employee__manager_id",
-    ),
-    "timesheet_entry": ScopeFields(
-        owner="created_by_id", employee="employee_id",
-        department="employee__department", project="project_id",
-        manager="employee__manager_id",
-    ),
-    "project": ScopeFields(owner="created_by_id", project="id", department="department"),
-    "task": ScopeFields(owner="created_by_id", project="project_id"),
-    "invoice": ScopeFields(owner="created_by_id", project="project_id"),
-    "credit_note": ScopeFields(owner="created_by_id", project="project_id"),
-    "customer": ScopeFields(owner="created_by_id"),
-    "payment": ScopeFields(owner="created_by_id"),
-    "refund": ScopeFields(owner="created_by_id"),
-    "bill": ScopeFields(owner="created_by_id"),
-    "vendor": ScopeFields(owner="created_by_id"),
-    "journal_entry": ScopeFields(owner="created_by_id", project="lines__project_id",
-                                 department="lines__department"),
-    "stock_movement": ScopeFields(owner="created_by_id"),
-    "adjustment": ScopeFields(owner="created_by_id"),
-    "item": ScopeFields(owner="created_by_id"),
-}
-
-DENY_ALL = Q(pk__in=[])
-
-
-def resolve_actor_scope(request) -> ActorScope:
-    """Resolve the actor's identity facts once, then cache them per request.
-
-    Cached on the request object *and* in Redis: the department path and
-    project membership are two extra queries that would otherwise run on
-    every list endpoint of every page load.
-    """
-    cached = getattr(request, "_actor_scope", None)
-    if cached is not None:
-        return cached
-
-    tenant_id = getattr(getattr(request, "tenant", None), "id", None) or get_current_tenant_id()
-    user_id = getattr(getattr(request, "user", None), "id", None) or get_current_user_id()
-    payload = effective_permissions(tenant_id, user_id)
-
-    cache = _cache()
-    key = scope_cache_key(tenant_id, user_id)
-    facts = cache.get(key)
-    if facts is None:
-        facts = _load_actor_facts(tenant_id, user_id)
-        cache.set(key, facts, PERMISSION_CACHE_TTL)
-
-    scope = ActorScope(
-        user_id=user_id,
-        employee_id=facts.get("employee_id"),
-        department_id=facts.get("department_id"),
-        department_path=facts.get("department_path") or "",
-        project_ids=tuple(facts.get("project_ids") or ()),
-        assigned_department_paths=tuple(payload.get("assigned_department_paths") or ()),
-        rules=payload.get("rules") or {},
-        rank=payload.get("rank"),
-    )
-    request._actor_scope = scope
-    return scope
-
-
-def _load_actor_facts(tenant_id, user_id) -> dict[str, Any]:
-    from apps.iam.models import TenantMembership
-
-    membership = (
-        TenantMembership.objects.select_related("employee", "employee__department")
-        .filter(tenant_id=tenant_id, user_id=user_id, is_active=True)
-        .first()
-    )
-    if membership is None or membership.employee_id is None:
-        # A user with no linked Employee (an external auditor) has no
-        # own_record / department identity at all. Every employee-shaped
-        # strategy will deny for them, which is correct.
-        return {"employee_id": None, "department_id": None,
-                "department_path": "", "project_ids": []}
-
-    employee = membership.employee
-    department = getattr(employee, "department", None)
-
-    from apps.projects.models import ProjectMember
-
-    project_ids = list(
-        ProjectMember.objects.filter(
-            tenant_id=tenant_id, employee_id=employee.id, is_active=True
-        ).values_list("project_id", flat=True)
-    )
-    return {
-        "employee_id": employee.id,
-        "department_id": getattr(department, "id", None),
-        "department_path": getattr(department, "path", "") or "",
-        "project_ids": project_ids,
-    }
-
-
-def _scope_from_user(user) -> ActorScope:
-    """Build an :class:`ActorScope` outside an HTTP request.
-
-    ``build_scope_q`` is also called from Celery tasks, management commands
-    and the reporting generators, where there is no ``request`` to hang a
-    cached scope off. Referencing this helper without defining it made every
-    such call raise ``NameError`` at runtime — invisible until a scheduled
-    report actually ran.
-
-    Falls back to a deny-everything scope when no tenant is bound, rather
-    than raising: a task that forgot ``tenant_context`` should return nothing,
-    not crash and retry forever.
-    """
-    from apps.core.tenancy_context import get_current_tenant_id
-
-    tenant_id = get_current_tenant_id()
-    user_id = getattr(user, "id", None)
-    if tenant_id is None or user_id is None:
-        return ActorScope()
-
-    payload = effective_permissions(tenant_id, user_id)
-    facts = _load_actor_facts(tenant_id, user_id)
-    return ActorScope(
-        user_id=user_id,
-        employee_id=facts.get("employee_id"),
-        department_id=facts.get("department_id"),
-        department_path=facts.get("department_path") or "",
-        project_ids=tuple(facts.get("project_ids") or ()),
-        assigned_department_paths=tuple(payload.get("assigned_department_paths") or ()),
-        rules=payload.get("rules") or {},
-        rank=payload.get("rank"),
-    )
-
-
-def build_scope_q(user, resource: str, *, request=None) -> Q:
-    """Compile the actor's ``ScopeRule`` for ``resource`` into a ``Q``.
-
-    Implements every value of ``ScopeRule.Strategy``. Anything not recognised
-    denies — a strategy string that reaches here without a branch is either a
-    database row written by hand or an enum member added without updating this
-    function, and both should stop traffic rather than open it.
-    """
-    scope = resolve_actor_scope(request) if request is not None else _scope_from_user(user)
-    rule = scope.rules.get(resource)
-    if rule is None:
-        # No explicit rule. What that means depends on whether the resource is
-        # narrowable at all, because RBAC and ABAC answer different questions:
-        # RBAC already decided *whether* the actor may touch this resource;
-        # ABAC only decides *which rows*. Treating a missing rule as a blanket
-        # denial conflates the two and silently voids the permission
-        # catalogue — an Accountant granted `accounting.account.read` would
-        # still get an empty list, with a 200 and no error to explain it.
-        #
-        # So:
-        #   * The tenant Owner (rank 0) is the tenant's ultimate authority and
-        #     holds every permission by definition — never row-restricted.
-        #   * A resource with no SCOPE_FIELDS entry has no dimension to narrow
-        #     by (there is no "your own" chart of accounts). RBAC is the only
-        #     meaningful gate, so the scope is the whole tenant. RLS and the
-        #     tenant manager still bound that to the bound tenant.
-        #   * A resource that IS in SCOPE_FIELDS is narrowable and therefore
-        #     sensitive — payslips, employee records, documents, leave. There a
-        #     missing rule stays fail-closed, because "we could not determine
-        #     which rows" must never degrade to "all of them".
-        if scope.rank == 0:
-            return Q()
-        if resource not in SCOPE_FIELDS:
-            logger.debug("resource=%r is not narrowable; scope=all-in-tenant", resource)
-            return Q()
-        logger.debug("no scope rule for narrowable resource=%r; denying", resource)
-        return DENY_ALL
-
-    strategy = rule["strategy"]
-    params = rule.get("parameters") or {}
-    fields = SCOPE_FIELDS.get(resource)
-    if fields is None and strategy not in ("all", "none"):
-        logger.error("resource %r has no SCOPE_FIELDS entry; denying", resource)
-        return DENY_ALL
-
-    q = _strategy_q(strategy, fields, scope, resource)
-    return _apply_parameters(q, params, scope, fields)
-
-
-def _strategy_q(strategy: str, fields: Optional[ScopeFields], scope: ActorScope,
-                resource: str) -> Q:
-    if strategy == "none":
-        return DENY_ALL
-
-    if strategy == "all":
-        # Q() is *not* "everything in the database": TenantManager and RLS have
-        # already narrowed to the bound tenant. "all" means all of this tenant.
-        return Q()
-
-    if strategy == "own_record":
-        if fields.employee and scope.employee_id:
-            return Q(**{fields.employee: scope.employee_id})
-        if scope.user_id:
-            return Q(**{fields.owner: scope.user_id})
-        return DENY_ALL
-
-    if strategy == "own_department":
-        if not (fields.department and scope.department_id):
-            return DENY_ALL
-        lookup = fields.department
-        # ``department`` may be spelled as a relation ("employee__department")
-        # or as the row's own PK ("id"); both compare by id.
-        suffix = "" if lookup.endswith("_id") or lookup == "id" else "_id"
-        return Q(**{f"{lookup}{suffix}": scope.department_id})
-
-    if strategy == "department_subtree":
-        if not (fields.department and scope.department_path):
-            return DENY_ALL
-        return _subtree_q(fields.department, [scope.department_path])
-
-    if strategy == "scoped_department":
-        # The department named on RoleAssignment.department, NOT the actor's
-        # own. This is what makes "HR Manager, Alexandria branch" one scoped
-        # assignment instead of a second role.
-        if not (fields.department and scope.assigned_department_paths):
-            return DENY_ALL
-        return _subtree_q(fields.department, list(scope.assigned_department_paths))
-
-    if strategy == "assigned_projects":
-        if not fields.project or not scope.project_ids:
-            return DENY_ALL
-        lookup = fields.project
-        suffix = "" if lookup.endswith("_id") or lookup == "id" else "_id"
-        return Q(**{f"{lookup}{suffix}__in": list(scope.project_ids)})
-
-    if strategy == "managed_employees":
-        # Direct reports only, via Employee.manager — deliberately narrower
-        # than department_subtree, which follows the org chart.
-        if not (fields.manager and scope.employee_id):
-            return DENY_ALL
-        own = Q(**{fields.employee: scope.employee_id}) if fields.employee else Q()
-        return Q(**{fields.manager: scope.employee_id}) | own
-
-    logger.error("unknown ScopeRule.strategy %r for resource %r; denying", strategy, resource)
-    return DENY_ALL
-
-
-def _subtree_q(department_lookup: str, paths: Iterable[str]) -> Q:
-    """Materialised-path prefix match.
-
-    ``Department.path`` is ``/root_uuid/child_uuid/…/`` and is indexed with
-    ``varchar_pattern_ops``, so ``LIKE '<prefix>%'`` is an index range scan.
-
-    The alternative — a recursive CTE, or walking children in Python — costs
-    one query per level and cannot use an index, so a manager over a
-    4 000-person division sequential-scans the employee table on every list
-    request. Re-parenting a department rewrites the affected ``path`` values
-    in one UPDATE; that cost is paid on reorganisation (monthly) rather than
-    on read (continuously).
-
-    ``startswith``, not ``contains``: a contains-match would let the subtree of
-    an unrelated department whose UUID happens to appear later in another path
-    leak in.
-    """
-    base = department_lookup[:-3] if department_lookup.endswith("_id") else department_lookup
-    lookup = "path__startswith" if base == "id" else f"{base}__path__startswith"
-    q = Q()
-    for path in paths:
-        if path:
-            q |= Q(**{lookup: path})
-    return q if q else DENY_ALL
-
-
-def _apply_parameters(q: Q, params: dict[str, Any], scope: ActorScope,
-                      fields: Optional[ScopeFields]) -> Q:
-    """Apply ``ScopeRule.parameters`` that are expressible as row filters.
-
-    Only row-shaped parameters belong here. ``max_amount`` is *not* one of
-    them: it is a transition guard checked by the service against the specific
-    document being approved, because filtering an approver's list to
-    "documents under 5 000" would hide the ones they need to escalate rather
-    than refusing the approval.
-
-    ``exclude_self_prepared`` is not one of them either, for exactly the same
-    reason, and it used to be applied here as ``q &= ~Q(created_by_id=...)``.
-    That is a visibility rule standing in for an authorisation rule, and the
-    two are not interchangeable:
-
-    * It hid rows rather than refusing an action. An Owner who created a
-      payroll run could not list it, open it, edit it, submit it or read its
-      payslips -- ``GET /payroll-runs/`` returned ``200 {"count": 0}`` while
-      the rows sat in the table. Nothing in the response said why.
-    * It filtered on ``created_by_id``, which is whoever inserted the row, not
-      whoever *prepared* the document. For a payroll run the SoD-relevant
-      actor is ``calculated_by`` -- the field ``approve_run`` actually checks,
-      and the field ``PayrollRun`` stores the value for.
-    * It could not express ``break_glass``, so the one-person tenant that
-      docs/05-permission-matrix.md carves out (Owner approves their own run,
-      audited) was unreachable: the run was invisible before any approval was
-      attempted.
-    * docs/06-api-contract.md specifies the behaviour as ``403
-      segregation_of_duties`` at the transition. A silently shorter list is
-      not that.
-
-    The control now lives in :func:`assert_not_self_prepared`, called at the
-    approve transition beside :func:`assert_within_limit`.
-    """
-    return q
 
 
 class SegregationOfDuties(PermissionDenied):
@@ -1106,7 +575,7 @@ def assert_reauth(request) -> None:
     if not token:
         raise ReauthRequired()
 
-    tenant_id = getattr(getattr(request, "tenant", None), "id", None) or get_current_tenant_id()
+    tenant_id = getattr(request, "tenant_id", None) or get_current_tenant_id()
     user_id = getattr(getattr(request, "user", None), "id", None)
     key = reauth_cache_key(tenant_id, user_id, token)
 
@@ -1157,7 +626,6 @@ def _find_request(args: tuple) -> Any:
 
 
 __all__ = [
-    "TenantResolutionMiddleware",
     "HasPermission",
     "ScopedQuerysetMixin",
     "ObjectPermissionMixin",

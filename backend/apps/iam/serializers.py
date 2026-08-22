@@ -52,12 +52,10 @@ logger = logging.getLogger("erp.security")
 # JWT claim names — the contract with the middleware
 # ---------------------------------------------------------------------------
 #: ``apps.tenancy.middleware.TenantMiddleware`` (the one wired into
-#: ``settings.MIDDLEWARE``) reads ``tenant``; the alternative resolver in
-#: ``apps.iam.permissions.TenantResolutionMiddleware`` reads ``tid``. Both are
-#: emitted with the same value so swapping middlewares cannot silently produce
-#: tenant-less tokens — a token whose tenant claim is not read falls through to
-#: the ``X-Tenant-ID`` header, which is exactly the unsigned input the claim
-#: exists to override.
+#: ``settings.MIDDLEWARE``) reads the ``tenant`` claim. A legacy ``tid`` claim
+#: is emitted alongside it with the same value for older clients; a token whose
+#: tenant claim is not read falls through to the ``X-Tenant-ID`` header, which
+#: is exactly the unsigned input the claim exists to override.
 TENANT_CLAIM = "tenant"
 TENANT_CLAIM_ALIAS = "tid"
 TENANT_SLUG_CLAIM = "tenant_slug"

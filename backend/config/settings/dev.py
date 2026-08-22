@@ -137,6 +137,12 @@ else:
             "LOCATION": "erp-dev-sessions",
             "KEY_PREFIX": "erp-sess",
         },
+        # See base.py: no tenant_key_func here either.
+        "permissions": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "erp-dev-permissions",
+            "KEY_PREFIX": "erp-perms",
+        },
     }
 
 # Without a broker there is nowhere to queue a task, so run them inline. This

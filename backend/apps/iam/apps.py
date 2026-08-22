@@ -35,3 +35,17 @@ class IamConfig(AppConfig):
     name = "apps.iam"
     label = "iam"
     verbose_name = "Identity & access"
+
+    def ready(self) -> None:
+        """Wire the permission-cache invalidation signals.
+
+        ``register_cache_invalidation`` connects ``post_save``/``post_delete``
+        on RoleAssignment, RolePermission, ScopeRule, Role and TenantMembership
+        so that revoking access takes effect on the *next* request. Its own
+        docstring says "call from IamConfig.ready()" — but nothing ever did, so
+        a revoked role kept working until the 300-second cache TTL expired. This
+        is that call. It is idempotent (the signals use ``dispatch_uid``).
+        """
+        from apps.iam.permissions import register_cache_invalidation
+
+        register_cache_invalidation()

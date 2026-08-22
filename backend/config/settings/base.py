@@ -491,6 +491,19 @@ CACHES = {
         "KEY_PREFIX": "erp-shared",
         "TIMEOUT": 60 * 60 * 24,
     },
+    # The permission/scope cache (apps.iam). Deliberately **without**
+    # ``tenant_key_func``: its keys already embed the tenant id
+    # (``perms:v1:{tenant}:{user}``), and prefixing them again with the
+    # *ambient* tenant would make a cache written under one bound tenant
+    # invisible to the invalidation that runs under another — which is exactly
+    # how a revoked role kept working. A shared store so an invalidation in one
+    # process is seen by the others.
+    "permissions": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": config("REDIS_PERMISSIONS_CACHE_URL", default="redis://localhost:6379/5"),
+        "KEY_PREFIX": "erp-perms",
+        "TIMEOUT": 300,
+    },
 }
 
 SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"

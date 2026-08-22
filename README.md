@@ -291,6 +291,7 @@ code disagree, one of them is a bug.
 | [**`docs/07-frontend-architecture.md`**](docs/07-frontend-architecture.md) | **Web + mobile blueprint: monorepo, the client money rule, TanStack Query keys and invalidation, optimistic-update policy, offline outbox, realtime, auth, RTL, testing** | ✅ **Written** |
 | [`docs/08-testing-strategy.md`](docs/08-testing-strategy.md) | Testing pyramid, what must have a test before it ships, property-based testing for money, invariants guarded per file | ✅ Written |
 | [`docs/09-verification-report.md`](docs/09-verification-report.md) | **What was actually executed and passed**: static checks, `manage.py check`, migrations against live PostgreSQL 16, 31 runtime invariant tests, and the known gaps | ✅ Written |
+| [**`docs/11-general-ledger.md`**](docs/11-general-ledger.md) | **The general ledger: the 5-level coded chart, the server-side coding scheme, the English default chart, add-account, the manual-journal lifecycle, the four core reports, and the frontend screens** | ✅ **Written** |
 | [`docs/diagrams/erd.md`](docs/diagrams/erd.md) | Seven Mermaid ER diagrams: tenancy/IAM, accounting, sales/payments/expenses, inventory/banking, projects, HR/payroll, and the cross-domain bridges | ✅ Written |
 | `docs/10-deployment-and-operations.md` | Environments, migrations under load, pgbouncer, backups, restore drills, runbooks | Planned |
 | `docs/10-testing-strategy.md` | Test pyramid, tenant-isolation tests, property-based money tests, E2E journeys | Planned |

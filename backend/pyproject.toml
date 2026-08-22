@@ -1,0 +1,54 @@
+# =============================================================================
+# Tooling configuration for the backend.
+#
+# `Makefile` calls `ruff` and `mypy`, but until now no configuration file
+# existed anywhere in the repository -- so CONVENTIONS.md §9 ("line length
+# 100") was a convention nobody's tools enforced, and `make lint` ran with
+# ruff's 88-column default against a codebase written to 100.
+#
+# pytest and coverage deliberately stay in `setup.cfg`; see the comment at the
+# top of that file. This file holds only ruff and mypy, so there is exactly one
+# home for each tool rather than two files disagreeing.
+# =============================================================================
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+# Migrations are generated code. Reformatting them produces enormous diffs that
+# hide the one hand-written line that matters (the RunSQL blocks installing RLS
+# policies and ledger triggers), and a "fix" there can silently alter schema.
+extend-exclude = ["*/migrations/*"]
+
+[tool.ruff.lint]
+# Ruff's default rule set (pyflakes + the pycodestyle errors that catch real
+# bugs) plus import sorting. Deliberately not a large `select` list: this
+# codebase has never been linted, and a wide net would bury genuine findings
+# under thousands of stylistic ones. Rules get added as the codebase is cleaned,
+# not before.
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "config"]
+
+[tool.ruff.lint.per-file-ignores]
+# Settings modules legitimately use star-imports and define names conditionally.
+"config/settings/*.py" = ["F403", "F405"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.11"
+plugins = ["mypy_django_plugin.main"]
+# Lenient on purpose. The value here is catching genuine type errors in the
+# money and posting paths, not annotating 70k lines of existing code. Strictness
+# is raised per-module as modules are refactored, never globally in one commit.
+ignore_missing_imports = true
+check_untyped_defs = false
+warn_unused_configs = true
+exclude = ["migrations/"]
+
+[tool.django-stubs]
+django_settings_module = "config.settings.dev"

@@ -78,7 +78,7 @@ superuser:
 # -----------------------------------------------------------------------------
 ## run: development server on :8000
 run:
-$(MANAGE) runserver 0.0.0.0:8000
+	$(MANAGE) runserver 0.0.0.0:8000
 
 ## worker: general Celery worker (default, payments, reports, notifications)
 worker:

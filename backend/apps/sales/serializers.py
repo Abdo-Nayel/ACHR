@@ -598,19 +598,12 @@ class CreditNoteSerializer(TenantScopedSerializer):
     amount_applied = MoneyField(read_only=True)
     amount_remaining = MoneyField(read_only=True)
     customer_name = serializers.CharField(source="customer.name", read_only=True)
-    salesperson_name = serializers.CharField(
-        source="salesperson.full_name", read_only=True, default=""
-    )
 
     class Meta:
         model = CreditNote
         fields = (
             "id",
             "number",
-            "order_number",
-            "subject",
-            "salesperson",
-            "salesperson_name",
             "customer",
             "customer_name",
             "invoice",

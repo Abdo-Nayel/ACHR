@@ -39,45 +39,9 @@ from apps.core.fields import MoneyField, QuantityField, RateField, ZERO
 from apps.core.models import (
     Currency,
     ImmutableFinancialModel,
+    StatusTransitionMixin,
     TenantScopedModel,
 )
-
-
-# ---------------------------------------------------------------------------
-# Status transition helper
-# ---------------------------------------------------------------------------
-
-class StatusTransitionMixin:
-    """Shared implementation of the ``ALLOWED_TRANSITIONS`` contract.
-
-    A plain mixin rather than an abstract model: it adds no columns, so it
-    must not participate in the model inheritance chain (that would create a
-    pointless extra table or confuse ``Meta`` inheritance).
-
-    Views never assign ``obj.status = ...``. They call :meth:`transition`,
-    which is the single place where an illegal state change is rejected. The
-    difference matters the day someone adds a "reopen" button: without the
-    map they simply set the field and a POSTED adjustment silently becomes
-    DRAFT again while its journal entry stays in the ledger.
-    """
-
-    ALLOWED_TRANSITIONS: dict[str, set[str]] = {}
-
-    def assert_can_transition(self, new_status: str) -> None:
-        allowed = self.ALLOWED_TRANSITIONS.get(self.status, set())
-        if new_status not in allowed:
-            raise ValidationError(
-                f"Illegal {type(self).__name__} transition "
-                f"{self.status} -> {new_status}."
-            )
-
-    def transition(self, new_status: str, *, user_id=None, save: bool = True) -> None:
-        self.assert_can_transition(new_status)
-        self.status = new_status
-        if user_id is not None:
-            self.updated_by_id = user_id
-        if save:
-            self.save(update_fields=["status", "updated_by", "updated_at"])
 
 
 # ---------------------------------------------------------------------------

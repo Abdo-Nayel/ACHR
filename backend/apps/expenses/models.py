@@ -26,6 +26,7 @@ from apps.core.fields import MoneyField, QuantityField, RateField, ZERO
 from apps.core.models import (
     Currency,
     ImmutableFinancialModel,
+    StatusTransitionMixin,
     TenantScopedModel,
 )
 
@@ -181,7 +182,7 @@ class Vendor(TenantScopedModel):
 # Expenses
 # ---------------------------------------------------------------------------
 
-class Expense(ImmutableFinancialModel):
+class Expense(StatusTransitionMixin, ImmutableFinancialModel):
     """A single item of spend, already paid, awaiting classification/approval.
 
     Lifecycle
@@ -406,14 +407,6 @@ class Expense(ImmutableFinancialModel):
     def __str__(self) -> str:  # pragma: no cover
         return self.number or f"expense {self.id}"
 
-    def assert_can_transition(self, new_status: str) -> None:
-        allowed = self.ALLOWED_TRANSITIONS.get(self.status, set())
-        if new_status not in allowed:
-            raise ValueError(
-                f"Illegal expense transition {self.status} -> {new_status} "
-                f"on expense {self.number or self.id}."
-            )
-
 
 class ExpenseReceipt(TenantScopedModel):
     """The evidence file for an expense, plus what OCR read from it.
@@ -498,7 +491,7 @@ class ExpenseReceipt(TenantScopedModel):
 # Vendor bills (accounts payable)
 # ---------------------------------------------------------------------------
 
-class Bill(ImmutableFinancialModel):
+class Bill(StatusTransitionMixin, ImmutableFinancialModel):
     """A vendor's invoice to us: an obligation to pay, recorded when incurred.
 
     The AP mirror of :class:`~apps.sales.models.Invoice`, and it carries the
@@ -648,14 +641,6 @@ class Bill(ImmutableFinancialModel):
     def __str__(self) -> str:  # pragma: no cover
         return self.number or f"DRAFT bill {self.id}"
 
-    def assert_can_transition(self, new_status: str) -> None:
-        allowed = self.ALLOWED_TRANSITIONS.get(self.status, set())
-        if new_status not in allowed:
-            raise ValueError(
-                f"Illegal bill transition {self.status} -> {new_status} "
-                f"on bill {self.number or self.id}."
-            )
-
 
 class BillLine(TenantScopedModel):
     """One coded line of a vendor bill.
@@ -748,7 +733,7 @@ class BillLine(TenantScopedModel):
         ]
 
 
-class BillPayment(ImmutableFinancialModel):
+class BillPayment(StatusTransitionMixin, ImmutableFinancialModel):
     """Cash leaving to settle one bill.
 
     Modelled one-payment-to-one-bill rather than with the sales side's
@@ -857,19 +842,12 @@ class BillPayment(ImmutableFinancialModel):
     def __str__(self) -> str:  # pragma: no cover
         return self.number or f"bill payment {self.id}"
 
-    def assert_can_transition(self, new_status: str) -> None:
-        allowed = self.ALLOWED_TRANSITIONS.get(self.status, set())
-        if new_status not in allowed:
-            raise ValueError(
-                f"Illegal bill payment transition {self.status} -> {new_status}."
-            )
-
 
 # ---------------------------------------------------------------------------
 # Vendor credits
 # ---------------------------------------------------------------------------
 
-class VendorCredit(TenantScopedModel):
+class VendorCredit(StatusTransitionMixin, TenantScopedModel):
     """A supplier's credit note: money the vendor owes back.
 
     The mirror of ``sales.CreditNote``, and modelled as its own document for
@@ -960,15 +938,6 @@ class VendorCredit(TenantScopedModel):
 
     def __str__(self) -> str:  # pragma: no cover - admin/debug only
         return f"{self.number or 'Draft'} — {self.vendor}"
-
-    def assert_can_transition(self, new_status: str) -> None:
-        allowed = self.ALLOWED_TRANSITIONS.get(self.status, ())
-        if new_status not in allowed:
-            raise ValueError(
-                f"A vendor credit cannot move from "
-                f"{self.get_status_display().lower()} to {new_status}. "
-                f"Allowed: {', '.join(allowed) or 'nothing — it is terminal'}."
-            )
 
 
 class VendorCreditLine(TenantScopedModel):

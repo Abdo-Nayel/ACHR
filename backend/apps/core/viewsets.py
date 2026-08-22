@@ -184,6 +184,18 @@ class TenantViewSetMixin(ScopedQuerysetMixin):
         context["membership"] = getattr(self.request, "membership", None)
         return context
 
+    # -- actor --------------------------------------------------------------
+
+    def _actor_id(self):
+        """The acting user's id, or ``None`` for an anonymous/system caller.
+
+        Every viewset that stamps ``created_by``/``updated_by`` or passes a
+        ``user_id`` into a service needs this, so it lives on the shared base
+        rather than being hand-copied — which it was, identically, in four
+        viewsets across expenses, hr and payroll.
+        """
+        return getattr(getattr(self.request, "user", None), "id", None)
+
 
 class TenantModelViewSet(TenantViewSetMixin, viewsets.ModelViewSet):
     """Full CRUD over a tenant-scoped model, minus the D."""

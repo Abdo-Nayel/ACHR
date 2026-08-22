@@ -224,9 +224,6 @@ class PayrollRunViewSet(IdempotentActionMixin, TenantModelViewSet):
 
     # -- helpers ------------------------------------------------------------
 
-    def _actor_id(self):
-        return getattr(getattr(self.request, "user", None), "id", None)
-
     def _set_status(self, run: PayrollRun, new_status: str, **extra) -> PayrollRun:
         """Validate against ``PayrollRun.ALLOWED_TRANSITIONS`` and write.
 

@@ -33,7 +33,7 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from apps.core.tenancy_context import bind_database_session, tenant_context
+from apps.core.tenancy_context import tenant_context
 from apps.hr.models import LeaveType, OvertimeType, Shift
 from apps.tenancy.models import Tenant
 
@@ -105,7 +105,6 @@ def seed_tenant_defaults(tenant_id) -> dict[str, int]:
     created = {"leave_types": 0, "shifts": 0, "overtime_types": 0}
 
     with tenant_context(tenant_id):
-        bind_database_session(tenant_id)
 
         for spec in LEAVE_TYPES:
             _, made = LeaveType.objects.get_or_create(

@@ -82,9 +82,15 @@ check("explicit platform-admin bypass still works", rls_bypass_works)
 
 print("\n=== DEFERRED BALANCE TRIGGER (fires at COMMIT) ===")
 def deferred_balance():
+    raw = connections['default']
+    # Bind t1 on this connection first: the reads below go through RLS too, and
+    # the earlier raw checks left ``app.current_tenant`` pointing elsewhere, so
+    # without this the ORM would see none of t1's rows and ``entry`` would be
+    # None. Session-scoped (is_local false) so it survives the autocommit toggle.
+    with raw.cursor() as c:
+        c.execute("SELECT set_config('app.current_tenant', %s, false)", [str(t1.id)])
     entry = JournalEntry.all_tenants.filter(status='posted', tenant_id=t1.id).first()
     acct = Account.all_tenants.filter(tenant_id=t1.id, is_postable=True).first()
-    raw = connections['default']
     raw.set_autocommit(False)
     try:
         with raw.cursor() as c:

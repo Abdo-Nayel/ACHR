@@ -51,7 +51,7 @@ from django.utils.text import slugify
 from rest_framework import status
 
 from apps.core.exceptions import DomainError
-from apps.core.tenancy_context import bind_database_session, tenant_context
+from apps.core.tenancy_context import tenant_context
 from apps.iam.models import Role, RoleAssignment, TenantMembership, User
 from apps.tenancy.models import Tenant, TenantAuditLog
 
@@ -268,7 +268,6 @@ def provision_organisation(
         # From here the tenant is known, so nothing below needs the RLS
         # bypass: bind it and write as the tenant, exactly like any request.
         with tenant_context(tenant.id):
-            bind_database_session(tenant.id)
 
             user = User.objects.create_user(
                 email=email,

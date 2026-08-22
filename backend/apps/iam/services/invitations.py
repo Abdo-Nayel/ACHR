@@ -52,7 +52,6 @@ from rest_framework import status
 
 from apps.core.exceptions import DomainError
 from apps.core.tenancy_context import (
-    bind_database_session,
     cross_tenant_lookup,
     tenant_context,
 )
@@ -201,7 +200,6 @@ def create_invitation(
         created_user = True
 
     with tenant_context(tenant_id):
-        bind_database_session(tenant_id)
 
         membership = TenantMembership.objects.filter(
             tenant_id=tenant_id, user=user
@@ -429,7 +427,6 @@ def accept_invitation(
         raise InvitationNotPending()
     if invitation.expires_at <= timezone.now():
         with tenant_context(invitation.tenant_id):
-            bind_database_session(invitation.tenant_id)
             invitation.transition(Invitation.Status.EXPIRED)
         raise InvitationExpired()
 
@@ -440,7 +437,6 @@ def accept_invitation(
     had_password = user.has_usable_password()
 
     with tenant_context(invitation.tenant_id):
-        bind_database_session(invitation.tenant_id)
 
         membership = TenantMembership.objects.filter(
             tenant_id=invitation.tenant_id, user=user

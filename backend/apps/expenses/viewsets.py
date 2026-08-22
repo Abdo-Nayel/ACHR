@@ -326,9 +326,6 @@ class ExpenseViewSet(StatusViewFilterMixin, IdempotentActionMixin, TenantModelVi
 
     # -- helpers ------------------------------------------------------------
 
-    def _actor_id(self):
-        return getattr(getattr(self.request, "user", None), "id", None)
-
     def _move(self, expense: Expense, new_status: str, **extra) -> Expense:
         """Ask the model whether the move is legal, then write only what changed.
 
@@ -526,9 +523,6 @@ class BillViewSet(StatusViewFilterMixin, IdempotentActionMixin, TenantModelViewS
         "void": ["purchasing.bill.void"],
         "post_to_ledger": ["purchasing.bill.post"],
     }
-
-    def _actor_id(self):
-        return getattr(getattr(self.request, "user", None), "id", None)
 
     def _move(self, bill: Bill, new_status: str, **extra) -> Bill:
         try:

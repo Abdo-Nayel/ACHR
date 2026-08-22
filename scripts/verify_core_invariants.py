@@ -17,7 +17,7 @@ django.setup()
 
 from django.db import connection, transaction, IntegrityError, InternalError, ProgrammingError
 from django.core.exceptions import PermissionDenied, ValidationError
-from apps.core.tenancy_context import tenant_context
+from apps.core.tenancy_context import bind_database_session, tenant_context
 from apps.tenancy.models import Tenant
 from apps.accounting.models import Account, AccountType, FiscalYear, FiscalPeriod, Journal, JournalEntry, JournalLine
 from apps.accounting.services.posting import (
@@ -129,31 +129,42 @@ with tenant_context(t1.id):
           lambda: expect_raise(PermissionDenied, lambda: e.delete()))
     check("ORM: queryset bulk delete raises",
           lambda: expect_raise(PermissionDenied, lambda: JournalEntry.objects.all().delete()))
+entry_id = e.id
 
-    def t_trig_delete():
-        with transaction.atomic():
-            with connection.cursor() as c:
-                expect_raise(Exception, lambda: c.execute(
-                    "DELETE FROM accounting_journal_entry WHERE id = %s", [str(e.id)]))
-    check("DB TRIGGER: raw SQL DELETE of posted entry blocked", t_trig_delete)
 
-    def t_trig_update():
-        with transaction.atomic():
-            with connection.cursor() as c:
-                expect_raise(Exception, lambda: c.execute(
-                    "UPDATE accounting_journal_line SET debit = 999999 WHERE entry_id = %s", [str(e.id)]))
-    check("DB TRIGGER: raw SQL UPDATE of posted line blocked", t_trig_update)
+def _raw_in_own_txn(sql, params):
+    """Run one raw statement in its **own** top-level transaction, tenant bound.
 
-    def t_trig_balance():
-        with transaction.atomic():
-            with connection.cursor() as c:
-                expect_raise(Exception, lambda: c.execute(
-                    "INSERT INTO accounting_journal_line "
-                    "(id,tenant_id,entry_id,line_number,account_id,description,debit,credit,"
-                    " base_debit,base_credit,partner_type,created_at,updated_at) "
-                    "VALUES (gen_random_uuid(),%s,%s,99,%s,'sneak',5,0,5,0,'',now(),now())",
-                    [str(t1.id), str(e.id), str(A["ar"].id)]))
-    check("DB TRIGGER: injecting an unbalancing line blocked", t_trig_balance)
+    The trigger checks cannot share ``tenant_context``'s transaction: the
+    balance trigger is ``DEFERRABLE INITIALLY DEFERRED`` and fires at COMMIT,
+    and a savepoint RELEASE (which is all a nested ``atomic`` does) is not a
+    commit — so a nested block would never trip it. A fresh transaction per
+    check also means an immediate BEFORE-trigger abort rolls back cleanly here
+    instead of poisoning the rest of the run. The tenant is rebound inside so
+    RLS still admits the row.
+    """
+    with transaction.atomic():
+        bind_database_session(t1.id)
+        with connection.cursor() as c:
+            c.execute(sql, params)
+
+
+check("DB TRIGGER: raw SQL DELETE of posted entry blocked",
+      lambda: expect_raise(Exception, lambda: _raw_in_own_txn(
+          "DELETE FROM accounting_journal_entry WHERE id = %s", [str(entry_id)])))
+
+check("DB TRIGGER: raw SQL UPDATE of posted line blocked",
+      lambda: expect_raise(Exception, lambda: _raw_in_own_txn(
+          "UPDATE accounting_journal_line SET debit = 999999 WHERE entry_id = %s",
+          [str(entry_id)])))
+
+check("DB TRIGGER: injecting an unbalancing line blocked",
+      lambda: expect_raise(Exception, lambda: _raw_in_own_txn(
+          "INSERT INTO accounting_journal_line "
+          "(id,tenant_id,entry_id,line_number,account_id,description,debit,credit,"
+          " base_debit,base_credit,partner_type,created_at,updated_at) "
+          "VALUES (gen_random_uuid(),%s,%s,99,%s,'sneak',5,0,5,0,'',now(),now())",
+          [str(t1.id), str(entry_id), str(A["ar"].id)])))
 
 print("\n=== CORRECTIONS ===")
 with tenant_context(t1.id):

@@ -71,7 +71,7 @@ from django.utils import timezone
 from apps.accounting.models import Account, TaxRate
 from apps.core.fields import ZERO, quantize_currency
 from apps.core.models import Currency
-from apps.core.tenancy_context import bind_database_session, tenant_context
+from apps.core.tenancy_context import tenant_context
 from apps.expenses.models import Expense, ExpenseCategory
 from apps.hr.models import Department, Employee, JobTitle, SalaryRevision, WorkSchedule
 from apps.iam.models import Role, RoleAssignment, TenantMembership, User
@@ -199,10 +199,7 @@ class Command(BaseCommand):
             f"employee@{slug}.example.com", "Karim Employee", options["password"]
         )
 
-        with tenant_context(tenant.id, owner.id), transaction.atomic():
-            # RLS reads ``app.current_tenant``; ``SET LOCAL`` needs this
-            # transaction, so the bind happens after atomic() opens.
-            bind_database_session(tenant.id)
+        with tenant_context(tenant.id, owner.id):
 
             accounts = self._accounts(tenant)
             departments = self._departments(tenant, owner)

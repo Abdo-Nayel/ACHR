@@ -56,52 +56,54 @@ RATE_DECIMAL_PLACES: Final[int] = 6
 ZERO: Final[Decimal] = Decimal("0.000000")
 
 
-class MoneyField(models.DecimalField):
+class _FixedDecimalField(models.DecimalField):
+    """A ``DecimalField`` whose precision is fixed by the subclass, not the
+    call site.
+
+    The three money/quantity/rate fields were byte-identical but for two
+    constants — same ``__init__`` defaulting ``max_digits``/``decimal_places``/
+    ``default``, same ``deconstruct`` popping the precision back out so a
+    migration records only the field type, not its (fixed) precision. That
+    popping is load-bearing: it is what keeps the existing migrations stable
+    even though precision now lives on the class. Subclasses set two class
+    attributes and inherit the rest.
+    """
+
+    default_max_digits: int
+    default_decimal_places: int
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("max_digits", self.default_max_digits)
+        kwargs.setdefault("decimal_places", self.default_decimal_places)
+        kwargs.setdefault("default", ZERO)
+        super().__init__(*args, **kwargs)
+
+    def deconstruct(self):
+        name, path, args, kwargs = super().deconstruct()
+        kwargs.pop("max_digits", None)
+        kwargs.pop("decimal_places", None)
+        return name, path, args, kwargs
+
+
+class MoneyField(_FixedDecimalField):
     """numeric(19,6) column for any monetary amount."""
 
-    def __init__(self, *args, **kwargs):
-        kwargs.setdefault("max_digits", MONEY_MAX_DIGITS)
-        kwargs.setdefault("decimal_places", MONEY_DECIMAL_PLACES)
-        kwargs.setdefault("default", ZERO)
-        super().__init__(*args, **kwargs)
-
-    def deconstruct(self):
-        name, path, args, kwargs = super().deconstruct()
-        kwargs.pop("max_digits", None)
-        kwargs.pop("decimal_places", None)
-        return name, path, args, kwargs
+    default_max_digits = MONEY_MAX_DIGITS
+    default_decimal_places = MONEY_DECIMAL_PLACES
 
 
-class QuantityField(models.DecimalField):
+class QuantityField(_FixedDecimalField):
     """numeric(19,6) column for stock quantities and billable hours."""
 
-    def __init__(self, *args, **kwargs):
-        kwargs.setdefault("max_digits", MONEY_MAX_DIGITS)
-        kwargs.setdefault("decimal_places", MONEY_DECIMAL_PLACES)
-        kwargs.setdefault("default", ZERO)
-        super().__init__(*args, **kwargs)
-
-    def deconstruct(self):
-        name, path, args, kwargs = super().deconstruct()
-        kwargs.pop("max_digits", None)
-        kwargs.pop("decimal_places", None)
-        return name, path, args, kwargs
+    default_max_digits = MONEY_MAX_DIGITS
+    default_decimal_places = MONEY_DECIMAL_PLACES
 
 
-class RateField(models.DecimalField):
+class RateField(_FixedDecimalField):
     """numeric(9,6) column for tax rates, discount percentages, FX rates."""
 
-    def __init__(self, *args, **kwargs):
-        kwargs.setdefault("max_digits", RATE_MAX_DIGITS)
-        kwargs.setdefault("decimal_places", RATE_DECIMAL_PLACES)
-        kwargs.setdefault("default", ZERO)
-        super().__init__(*args, **kwargs)
-
-    def deconstruct(self):
-        name, path, args, kwargs = super().deconstruct()
-        kwargs.pop("max_digits", None)
-        kwargs.pop("decimal_places", None)
-        return name, path, args, kwargs
+    default_max_digits = RATE_MAX_DIGITS
+    default_decimal_places = RATE_DECIMAL_PLACES
 
 
 # ---------------------------------------------------------------------------

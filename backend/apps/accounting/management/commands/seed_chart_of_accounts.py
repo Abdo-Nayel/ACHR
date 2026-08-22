@@ -89,10 +89,9 @@ from datetime import date, timedelta
 from typing import Optional
 
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
 
 from apps.accounting.models import Account, AccountType, FiscalPeriod, FiscalYear, Journal
-from apps.core.tenancy_context import bind_database_session, tenant_context
+from apps.core.tenancy_context import tenant_context
 from apps.tenancy.models import Tenant
 
 #: Supported chart layouts. "EG" follows the Egyptian unified-chart digit
@@ -392,10 +391,7 @@ class Command(BaseCommand):
         # One transaction for the whole chart: a partially seeded chart is
         # worse than an absent one, because the missing half only surfaces at
         # the first posting, in front of a user.
-        with tenant_context(tenant.id), transaction.atomic():
-            # RLS reads ``app.current_tenant``; SET LOCAL requires the
-            # surrounding transaction, hence the ordering here.
-            bind_database_session(tenant.id)
+        with tenant_context(tenant.id):
 
             realigned = self._realign_aliases(tenant)
             accounts, created_accounts, updated_accounts = self._seed_accounts(

@@ -30,6 +30,7 @@ from apps.core.fields import MoneyField, QuantityField, RateField, ZERO
 from apps.core.models import (
     Currency,
     ImmutableFinancialModel,
+    StatusTransitionMixin,
     TenantScopedModel,
 )
 
@@ -374,7 +375,7 @@ class TaxBracket(TenantScopedModel):
 # Runs and payslips
 # ---------------------------------------------------------------------------
 
-class PayrollRun(TenantScopedModel):
+class PayrollRun(StatusTransitionMixin, TenantScopedModel):
     """One payroll cycle for one period — the unit of calculation, approval,
     posting and payment.
 
@@ -573,15 +574,6 @@ class PayrollRun(TenantScopedModel):
         return not self.locked and self.status in {
             self.Status.DRAFT, self.Status.CALCULATED
         }
-
-    def assert_can_transition(self, new_status: str) -> None:
-        allowed = self.ALLOWED_TRANSITIONS.get(self.status, set())
-        if new_status not in allowed:
-            raise ValueError(
-                f"Illegal payroll run transition {self.status} -> {new_status}. "
-                f"A posted run is corrected with a reversing journal entry, "
-                f"never by moving it backwards."
-            )
 
 
 class Payslip(ImmutableFinancialModel):
@@ -802,7 +794,7 @@ class PayslipLine(ImmutableFinancialModel):
 # Disbursement
 # ---------------------------------------------------------------------------
 
-class PayrollBankFile(TenantScopedModel):
+class PayrollBankFile(StatusTransitionMixin, TenantScopedModel):
     """A batch payment instruction sent to the bank for one run.
 
     Separate from the run because the two fail independently: a run can be
@@ -881,13 +873,6 @@ class PayrollBankFile(TenantScopedModel):
             models.Index(fields=["tenant", "run"], name="ix_pay_bankfile_run"),
             models.Index(fields=["tenant", "status"], name="ix_pay_bankfile_status"),
         ]
-
-    def assert_can_transition(self, new_status: str) -> None:
-        allowed = self.ALLOWED_TRANSITIONS.get(self.status, set())
-        if new_status not in allowed:
-            raise ValueError(
-                f"Illegal bank file transition {self.status} -> {new_status}."
-            )
 
 
 class SalaryDisbursement(TenantScopedModel):

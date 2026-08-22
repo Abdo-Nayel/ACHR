@@ -31,6 +31,7 @@ from apps.core.fields import MoneyField, RateField
 from apps.core.models import (
     Currency,
     ImmutableFinancialModel,
+    StatusTransitionMixin,
     TenantScopedModel,
 )
 
@@ -178,7 +179,7 @@ class PaymentGatewayConfig(TenantScopedModel):
 # Payments
 # ---------------------------------------------------------------------------
 
-class Payment(ImmutableFinancialModel):
+class Payment(StatusTransitionMixin, ImmutableFinancialModel):
     """Money received from a customer, independent of what it settles.
 
     Lifecycle
@@ -413,14 +414,6 @@ class Payment(ImmutableFinancialModel):
             self.Status.DISPUTED,
         }
 
-    def assert_can_transition(self, new_status: str) -> None:
-        allowed = self.ALLOWED_TRANSITIONS.get(self.status, set())
-        if new_status not in allowed:
-            raise ValueError(
-                f"Illegal payment transition {self.status} -> {new_status} "
-                f"on payment {self.number or self.id}."
-            )
-
 
 class PaymentApplication(ImmutableFinancialModel):
     """The allocation of part of a payment to one invoice.
@@ -496,7 +489,7 @@ class PaymentApplication(ImmutableFinancialModel):
         return f"{self.amount} of {self.payment_id} -> {self.invoice_id}"
 
 
-class Refund(ImmutableFinancialModel):
+class Refund(StatusTransitionMixin, ImmutableFinancialModel):
     """Money returned to the customer against an earlier payment.
 
     A refund is its own document, not a negative payment. Negative amounts on
@@ -581,19 +574,12 @@ class Refund(ImmutableFinancialModel):
             models.Index(fields=["payment"], name="ix_refund_payment"),
         ]
 
-    def assert_can_transition(self, new_status: str) -> None:
-        allowed = self.ALLOWED_TRANSITIONS.get(self.status, set())
-        if new_status not in allowed:
-            raise ValueError(
-                f"Illegal refund transition {self.status} -> {new_status}."
-            )
-
 
 # ---------------------------------------------------------------------------
 # Webhooks
 # ---------------------------------------------------------------------------
 
-class WebhookEvent(TenantScopedModel):
+class WebhookEvent(StatusTransitionMixin, TenantScopedModel):
     """A raw event delivered by a payment provider, stored before it is acted on.
 
     The store-then-process pattern
@@ -729,10 +715,3 @@ class WebhookEvent(TenantScopedModel):
 
     def __str__(self) -> str:  # pragma: no cover
         return f"{self.event_type} {self.provider_event_id}"
-
-    def assert_can_transition(self, new_status: str) -> None:
-        allowed = self.ALLOWED_TRANSITIONS.get(self.status, set())
-        if new_status not in allowed:
-            raise ValueError(
-                f"Illegal webhook event transition {self.status} -> {new_status}."
-            )

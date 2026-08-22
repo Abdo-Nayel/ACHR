@@ -784,9 +784,6 @@ class OvertimeSlipViewSet(IdempotentActionMixin, TenantModelViewSet):
         "reject": ["hr.attendance.approve"],
     }
 
-    def _actor_id(self):
-        return getattr(getattr(self.request, "user", None), "id", None)
-
     @action(detail=True, methods=["post"], url_path="submit")
     def submit(self, request, pk=None):
         """DRAFT -> SUBMITTED. The claim is now somebody else's to judge."""

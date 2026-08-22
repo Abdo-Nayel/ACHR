@@ -64,6 +64,61 @@ class AllTenantsManager(models.Manager.from_queryset(TenantQuerySet)):
 
 
 # ---------------------------------------------------------------------------
+# Status transitions
+# ---------------------------------------------------------------------------
+
+class StatusTransitionMixin:
+    """One state machine for every document type in the system.
+
+    A plain mixin, not an abstract model: it adds no columns, so it must stay
+    out of the model-inheritance chain (an abstract base there would confuse
+    ``Meta`` inheritance for no gain). Mix it in *before* the model base::
+
+        class Invoice(StatusTransitionMixin, ImmutableFinancialModel):
+            class Status(models.TextChoices):
+                DRAFT = "draft", "Draft"
+                SENT = "sent", "Sent"
+            ALLOWED_TRANSITIONS = {Status.DRAFT: {Status.SENT}}
+
+    Before this existed the same ``assert_can_transition`` was hand-written on
+    eighteen models across ten apps, and they disagreed on what to raise —
+    some ``ValueError``, some Django ``ValidationError`` — so the *same* user
+    mistake surfaced as a 409 from one endpoint and a 500 from another. Here it
+    raises :class:`~apps.core.exceptions.IllegalTransitionError` every time,
+    which is both a ``ValueError`` (so existing guards still catch it) and an
+    HTTP 409 (so it never reaches the 500 handler).
+
+    Views never assign ``obj.status = ...``. They call :meth:`transition`, the
+    single place an illegal change is refused — the difference that matters the
+    day someone adds a "reopen" button and a POSTED document silently reverts
+    to DRAFT while its journal entry stays in the ledger.
+    """
+
+    #: ``{from_status: {to_status, ...}}``. Empty means "no transition legal".
+    ALLOWED_TRANSITIONS: dict[str, set[str]] = {}
+
+    def assert_can_transition(self, new_status: str) -> None:
+        from apps.core.exceptions import IllegalTransitionError
+
+        allowed = self.ALLOWED_TRANSITIONS.get(self.status, ())
+        if new_status not in allowed:
+            noun = type(self).__name__.lower()
+            raise IllegalTransitionError(
+                f"Illegal {noun} transition {self.status} -> {new_status}."
+            )
+
+    def transition(self, new_status: str, *, user_id=None, save: bool = True) -> None:
+        """Validate, then apply, a status change. The only sanctioned writer of
+        ``status`` outside a service that needs extra columns in the same save."""
+        self.assert_can_transition(new_status)
+        self.status = new_status
+        if user_id is not None:
+            self.updated_by_id = user_id
+        if save:
+            self.save(update_fields=["status", "updated_by", "updated_at"])
+
+
+# ---------------------------------------------------------------------------
 # Abstract bases
 # ---------------------------------------------------------------------------
 

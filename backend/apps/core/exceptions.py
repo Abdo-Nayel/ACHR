@@ -60,7 +60,20 @@ class InsufficientStockError(DomainError):
     default_detail = "Not enough stock on hand."
 
 
-class IllegalTransitionError(DomainError):
+class IllegalTransitionError(DomainError, ValueError):
+    """A status change the state machine forbids.
+
+    Deliberately a ``ValueError`` as well as a ``DomainError``. An illegal
+    transition *is* a value error — a caller asked for a state the object
+    cannot be in — and code that guards transitions with ``except ValueError``
+    has always relied on that. It is also a client mistake, not a server fault,
+    so it must render as an HTTP 409 rather than falling through the exception
+    handler to a 500. Inheriting both is what lets one exception satisfy both
+    truths, so :class:`~apps.core.models.StatusTransitionMixin` can replace the
+    dozen hand-written ``raise ValueError(...)`` guards without changing either
+    the HTTP contract or the callers that catch them.
+    """
+
     status_code = status.HTTP_409_CONFLICT
     default_code = "illegal_transition"
     default_detail = "That status change is not allowed."

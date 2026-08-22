@@ -34,29 +34,7 @@ from django.db import models
 from django.utils import timezone
 
 from apps.core.fields import MoneyField, RateField, ZERO
-from apps.core.models import Currency, TenantScopedModel
-
-
-class StatusTransitionMixin:
-    """Shared ``ALLOWED_TRANSITIONS`` enforcement (see inventory.models)."""
-
-    ALLOWED_TRANSITIONS: dict[str, set[str]] = {}
-
-    def assert_can_transition(self, new_status: str) -> None:
-        allowed = self.ALLOWED_TRANSITIONS.get(self.status, set())
-        if new_status not in allowed:
-            raise ValidationError(
-                f"Illegal {type(self).__name__} transition "
-                f"{self.status} -> {new_status}."
-            )
-
-    def transition(self, new_status: str, *, user_id=None, save: bool = True) -> None:
-        self.assert_can_transition(new_status)
-        self.status = new_status
-        if user_id is not None:
-            self.updated_by_id = user_id
-        if save:
-            self.save(update_fields=["status", "updated_by", "updated_at"])
+from apps.core.models import Currency, StatusTransitionMixin, TenantScopedModel
 
 
 # ---------------------------------------------------------------------------

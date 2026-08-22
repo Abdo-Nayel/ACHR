@@ -35,7 +35,12 @@ import os
 
 from celery import Celery
 from celery.schedules import crontab
-from celery.signals import setup_logging, task_prerun, task_postrun
+from celery.signals import (
+    before_task_publish,
+    setup_logging,
+    task_postrun,
+    task_prerun,
+)
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.dev")
 
@@ -159,24 +164,59 @@ app.conf.beat_schedule = {
 # Tenant + correlation propagation
 # ---------------------------------------------------------------------------
 
+@before_task_publish.connect
+def _propagate_tenant_header(headers=None, **extra):
+    """Producer side: stamp the caller's tenant/request onto the message.
+
+    The worker's ``task_prerun`` hook reads ``tenant_id`` from the message
+    headers — but nothing was ever *writing* it, so the propagation was a
+    one-ended pipe. This closes it: whatever tenant the enqueuing code is bound
+    to travels with the job. Enqueue from inside ``tenant_context`` (or a
+    request) and the worker knows which company the work is for.
+    """
+    if headers is None:
+        return
+    from apps.core.tenancy_context import (  # noqa: PLC0415
+        get_current_tenant_id,
+        get_current_user_id,
+    )
+
+    tenant_id = get_current_tenant_id()
+    if tenant_id is not None and "tenant_id" not in headers:
+        headers["tenant_id"] = str(tenant_id)
+    user_id = get_current_user_id()
+    if user_id is not None and "user_id" not in headers:
+        headers["user_id"] = str(user_id)
+
+
 @task_prerun.connect
 def _bind_task_context(sender=None, task_id=None, task=None, args=None,
                        kwargs=None, **extra):
-    """Re-establish tenant context inside the worker.
+    """Worker side: re-establish the ORM tenant ContextVar from the headers.
 
-    The producer puts ``tenant_id``/``request_id`` in the message headers;
-    without this hook the worker runs with no tenant bound, the ORM manager
-    returns ``.none()`` and RLS matches nothing — the task appears to succeed
-    while doing nothing at all.
+    This sets the ``ContextVar`` the ORM manager reads. It deliberately does
+    **not** bind the PostgreSQL session here: ``SET LOCAL`` lives only inside a
+    transaction, and this hook returns before the task body runs, so a binding
+    made here would be gone by the first query. The durable both-layer binding
+    belongs in the task body — every task wraps its work in
+    ``tenant_context(...)`` (which now binds the DB session too), so RLS sees
+    the tenant. This ContextVar is the fallback that keeps ORM reads scoped
+    even before that wrapper is entered.
     """
-    from apps.core.tenancy_context import _current_tenant_id  # noqa: PLC0415
+    from apps.core.tenancy_context import (  # noqa: PLC0415
+        _current_tenant_id,
+        _current_user_id,
+    )
 
     headers = getattr(getattr(task, "request", None), "headers", None) or {}
+    import uuid  # noqa: PLC0415
+
     tenant_id = headers.get("tenant_id")
     if tenant_id:
-        import uuid  # noqa: PLC0415
-
         _current_tenant_id.set(uuid.UUID(str(tenant_id)))
+    user_id = headers.get("user_id")
+    if user_id:
+        _current_user_id.set(uuid.UUID(str(user_id)))
 
 
 @task_postrun.connect
@@ -184,9 +224,13 @@ def _clear_task_context(sender=None, task_id=None, task=None, args=None,
                         kwargs=None, retval=None, state=None, **extra):
     """Workers are long-lived; a leftover tenant would be inherited by the
     next task on that worker and write rows into the wrong company."""
-    from apps.core.tenancy_context import _current_tenant_id  # noqa: PLC0415
+    from apps.core.tenancy_context import (  # noqa: PLC0415
+        _current_tenant_id,
+        _current_user_id,
+    )
 
     _current_tenant_id.set(None)
+    _current_user_id.set(None)
 
 
 @setup_logging.connect

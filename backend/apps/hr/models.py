@@ -23,7 +23,7 @@ from __future__ import annotations
 from django.db import models
 
 from apps.core.fields import MoneyField, QuantityField, RateField, ZERO
-from apps.core.models import Currency, TenantScopedModel
+from apps.core.models import Currency, StatusTransitionMixin, TenantScopedModel
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +198,7 @@ class Gender(models.TextChoices):
     UNSPECIFIED = "unspecified", "Unspecified"
 
 
-class Employee(TenantScopedModel):
+class Employee(StatusTransitionMixin, TenantScopedModel):
     """A person employed by the tenant — an HR fact, not a login.
 
     Why Employee and iam.User are separate models
@@ -430,14 +430,6 @@ class Employee(TenantScopedModel):
         engine refuses to guess.
         """
         return self.status in {self.Status.ACTIVE, self.Status.ON_LEAVE}
-
-    def assert_can_transition(self, new_status: str) -> None:
-        allowed = self.ALLOWED_TRANSITIONS.get(self.status, set())
-        if new_status not in allowed:
-            raise ValueError(
-                f"Illegal employee status transition {self.status} -> {new_status}. "
-                f"Re-hiring a terminated employee requires a new employee record."
-            )
 
 
 class EmployeeDocument(TenantScopedModel):
@@ -1117,7 +1109,7 @@ class LeaveBalance(TenantScopedModel):
         )
 
 
-class LeaveRequest(TenantScopedModel):
+class LeaveRequest(StatusTransitionMixin, TenantScopedModel):
     """An employee's application to be absent, and its approval state.
 
     Overlap prevention
@@ -1269,19 +1261,6 @@ class LeaveRequest(TenantScopedModel):
 
     def __str__(self) -> str:  # pragma: no cover
         return f"{self.employee_id} {self.start_date}..{self.end_date} ({self.status})"
-
-    def assert_can_transition(self, new_status: str) -> None:
-        """The only sanctioned way to change ``status``.
-
-        Views and serializers never assign ``.status`` directly; every path
-        goes through ``apps.hr.services.leave``, which calls this first. That
-        is what keeps "approved after being cancelled" from being reachable.
-        """
-        allowed = self.ALLOWED_TRANSITIONS.get(self.status, set())
-        if new_status not in allowed:
-            raise ValueError(
-                f"Illegal leave request transition {self.status} -> {new_status}."
-            )
 
     @property
     def is_blocking(self) -> bool:
@@ -1458,7 +1437,7 @@ class OvertimeType(TenantScopedModel):
         return f"{self.code} ({self.multiplier}×)"
 
 
-class OvertimeSlip(TenantScopedModel):
+class OvertimeSlip(StatusTransitionMixin, TenantScopedModel):
     """Hours worked beyond the shift, and what they are worth.
 
     Lifecycle mirrors every other claim in this codebase — ``DRAFT ->
@@ -1558,12 +1537,3 @@ class OvertimeSlip(TenantScopedModel):
 
     def __str__(self) -> str:  # pragma: no cover - admin/debug only
         return f"{self.employee} {self.work_date} {self.hours}h"
-
-    def assert_can_transition(self, new_status: str) -> None:
-        allowed = self.ALLOWED_TRANSITIONS.get(self.status, ())
-        if new_status not in allowed:
-            raise ValueError(
-                f"An overtime slip cannot move from "
-                f"{self.get_status_display().lower()} to {new_status}. "
-                f"Allowed: {', '.join(allowed) or 'nothing — it is terminal'}."
-            )

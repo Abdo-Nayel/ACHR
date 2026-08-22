@@ -21,7 +21,7 @@ import uuid
 from contextvars import ContextVar
 from typing import Iterator, Optional
 
-from django.db import connection
+from django.db import connection, transaction
 
 _current_tenant_id: ContextVar[Optional[uuid.UUID]] = ContextVar(
     "current_tenant_id", default=None
@@ -58,12 +58,36 @@ def bind_database_session(tenant_id: Optional[uuid.UUID], *, bypass: bool = Fals
 
 @contextlib.contextmanager
 def tenant_context(tenant_id, user_id=None) -> Iterator[None]:
-    """Bind a tenant for the duration of a block (Celery tasks, management
-    commands, tests). Always restores the previous value, including on error."""
-    tenant_token = _current_tenant_id.set(uuid.UUID(str(tenant_id)) if tenant_id else None)
-    user_token = _current_user_id.set(uuid.UUID(str(user_id)) if user_id else None)
+    """Bind a tenant for a block, on **both** layers, for non-request code
+    (Celery tasks, management commands, tests).
+
+    Two guards read two different things: the ORM ``TenantManager`` reads the
+    ``ContextVar`` set here, and Row-Level Security reads the PostgreSQL session
+    variable ``app.current_tenant``. Binding only the first was a real bug — a
+    Celery task that did so read *nothing* under the non-owner role, because RLS
+    saw no tenant and filtered every row, silently. So this now sets the
+    ContextVar *and* calls :func:`bind_database_session`.
+
+    ``bind_database_session`` issues ``SET LOCAL``, which lives only inside a
+    transaction, so this opens one for the block. A web request does not use
+    this helper — its middleware already owns the transaction and binds inside
+    it — so nothing on the request hot path changes. The previous value is
+    always restored, including on error, so a task that raises cannot leak its
+    tenant onto the next job on a pooled worker connection.
+    """
+    tid = uuid.UUID(str(tenant_id)) if tenant_id else None
+    uid = uuid.UUID(str(user_id)) if user_id else None
+    tenant_token = _current_tenant_id.set(tid)
+    user_token = _current_user_id.set(uid)
     try:
-        yield
+        if connection.vendor == "postgresql":
+            with transaction.atomic():
+                bind_database_session(tid)
+                yield
+        else:
+            # No RLS to bind (SQLite in some unit tests); the ORM ContextVar
+            # guard above is the whole story there.
+            yield
     finally:
         _current_tenant_id.reset(tenant_token)
         _current_user_id.reset(user_token)
@@ -71,10 +95,27 @@ def tenant_context(tenant_id, user_id=None) -> Iterator[None]:
 
 @contextlib.contextmanager
 def platform_admin_context() -> Iterator[None]:
-    """Temporarily disable tenant filtering. Audit-logged by the caller."""
+    """Temporarily disable tenant filtering at the database layer. Audit-logged
+    by the caller.
+
+    Sets ``app.rls_bypass = on`` on the session, which the RLS policy reads as
+    its escape hatch. This previously set only a ``ContextVar`` that nothing
+    ever read, so the "platform admin bypass" widened nothing — a
+    security-relevant no-op. ``SET LOCAL`` needs a transaction, hence the
+    ``atomic`` block; the bypass dies with it and cannot survive onto a pooled
+    connection.
+    """
     token = _rls_bypass.set(True)
     try:
-        yield
+        if connection.vendor == "postgresql":
+            with transaction.atomic():
+                bind_database_session(get_current_tenant_id(), bypass=True)
+                try:
+                    yield
+                finally:
+                    bind_database_session(get_current_tenant_id(), bypass=False)
+        else:
+            yield
     finally:
         _rls_bypass.reset(token)
 

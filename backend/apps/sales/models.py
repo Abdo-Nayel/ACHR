@@ -33,6 +33,7 @@ from apps.core.fields import MoneyField, QuantityField, RateField, ZERO
 from apps.core.models import (
     Currency,
     ImmutableFinancialModel,
+    StatusTransitionMixin,
     TenantScopedModel,
 )
 
@@ -121,7 +122,7 @@ class Customer(TenantScopedModel):
 # Invoices
 # ---------------------------------------------------------------------------
 
-class Invoice(ImmutableFinancialModel):
+class Invoice(StatusTransitionMixin, ImmutableFinancialModel):
     """A demand for payment issued to a customer; the AR sub-ledger's unit.
 
     Lifecycle
@@ -397,20 +398,6 @@ class Invoice(ImmutableFinancialModel):
             self.Status.OVERDUE,
         }
 
-    def assert_can_transition(self, new_status: str) -> None:
-        """Reject illegal lifecycle moves before any row is touched.
-
-        Mirrors ``accounting.JournalEntry.assert_can_transition`` on purpose:
-        one shape of state machine across the codebase means a reviewer can
-        audit every document type the same way.
-        """
-        allowed = self.ALLOWED_TRANSITIONS.get(self.status, set())
-        if new_status not in allowed:
-            raise ValueError(
-                f"Illegal invoice transition {self.status} -> {new_status} "
-                f"on invoice {self.number or self.id}."
-            )
-
     def build_journal_entry(self):
         """Delegate to the workflow service (convention §7).
 
@@ -534,7 +521,7 @@ class InvoiceLine(TenantScopedModel):
 # Credit notes
 # ---------------------------------------------------------------------------
 
-class CreditNote(ImmutableFinancialModel):
+class CreditNote(StatusTransitionMixin, ImmutableFinancialModel):
     """A negative invoice: goods returned, over-billing corrected, discount
     granted after the fact.
 
@@ -645,13 +632,6 @@ class CreditNote(ImmutableFinancialModel):
 
     def __str__(self) -> str:  # pragma: no cover
         return self.number or f"DRAFT credit note {self.id}"
-
-    def assert_can_transition(self, new_status: str) -> None:
-        allowed = self.ALLOWED_TRANSITIONS.get(self.status, set())
-        if new_status not in allowed:
-            raise ValueError(
-                f"Illegal credit note transition {self.status} -> {new_status}."
-            )
 
 
 class CreditNoteLine(TenantScopedModel):

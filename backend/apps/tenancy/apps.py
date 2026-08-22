@@ -35,3 +35,7 @@ class TenancyConfig(AppConfig):
     name = "apps.tenancy"
     label = "tenancy"
     verbose_name = "Tenancy"
+
+    def ready(self) -> None:
+        # Import registers the deploy-time RLS system checks (@register).
+        from apps.tenancy import checks  # noqa: F401

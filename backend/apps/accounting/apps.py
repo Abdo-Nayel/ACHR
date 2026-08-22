@@ -36,3 +36,7 @@ class AccountingConfig(AppConfig):
     name = "apps.accounting"
     label = "accounting"
     verbose_name = "Accounting"
+
+    def ready(self) -> None:
+        # Import registers the deploy-time ledger-trigger system check (@register).
+        from apps.accounting import checks  # noqa: F401
